@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud, Trash2 } from 'lucide-react';
+import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud } from 'lucide-react';
 import { db, auth } from './firebase';
 import { collection, doc, setDoc, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -43,108 +43,6 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
 
-  // ===================== FUNCIÓN NUEVA: RESETEAR SISTEMA =====================
-  const resetSystem = async () => {
-    // Mostrar confirmación
-    const confirmReset = window.confirm(
-      '⚠️ ¿ESTÁS SEGURO DE QUE QUIERES REINICIAR EL SISTEMA COMPLETAMENTE?\n\n' +
-      'Esta acción eliminará:\n' +
-      '• Todos los datos históricos diarios\n' +
-      '• Todos los resúmenes mensuales\n' +
-      'El sistema comenzará desde CERO y podrás registrar datos\n' +
-      'desde la fecha actual.\n\n' +
-      'Esta acción NO se puede deshacer.\n\n' +
-      '¿Continuar?'
-    );
-
-    if (!confirmReset) {
-      return; // El usuario canceló
-    }
-
-    try {
-      setLoading(true);
-      setCloudStatus('🔄 Reiniciando sistema...');
-
-      // 1. Eliminar datos de Firebase si hay usuario conectado
-      if (user) {
-        try {
-          // Eliminar datos históricos de Firebase
-          const historicalRef = collection(db, 'users', user.uid, 'historicalData');
-          const historicalSnapshot = await getDocs(historicalRef);
-          for (const docSnap of historicalSnapshot.docs) {
-            await deleteDoc(doc(db, 'users', user.uid, 'historicalData', docSnap.id));
-          }
-
-          // Eliminar datos mensuales de Firebase
-          const monthlyRef = collection(db, 'users', user.uid, 'monthlyData');
-          const monthlySnapshot = await getDocs(monthlyRef);
-          for (const docSnap of monthlySnapshot.docs) {
-            await deleteDoc(doc(db, 'users', user.uid, 'monthlyData', docSnap.id));
-          }
-
-          console.log('✅ Datos eliminados de Firebase');
-        } catch (firebaseError) {
-          console.warn('⚠️ No se pudieron eliminar datos de Firebase:', firebaseError);
-        }
-      }
-
-      // 2. Limpiar localStorage
-      localStorage.removeItem('historicalData');
-      localStorage.removeItem('monthlyData');
-      localStorage.removeItem('currentMonth');
-      console.log('✅ localStorage limpiado');
-
-      // 3. Resetear TODOS los estados críticos
-      setHistoricalData({});
-      setMonthlyData({});
-      
-      // IMPORTANTE: Resetear el estado del día actual
-      setIsDayCompleted(false);
-      
-      // Resetear datos del día actual desde CERO
-      setTodayData({
-        date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        porcentaje: 0
-      });
-      
-      // Resetear pasos completados
-      setCompletedSteps({ paso1: false, paso2: false });
-      
-      // Regresar al paso 1
-      setCurrentView('paso1');
-      
-      // Limpiar todas las vistas
-      setSelectedDate(null);
-      setShowMonthlyHistory(false);
-      setShowCalendar(false);
-      setIsEditing(false);
-      setEditData(null);
-      
-      // Resetear calendario al mes actual
-      setCalendarMonth(new Date());
-
-      // 4. Mostrar mensaje de éxito
-      setCloudStatus('✅ Sistema reiniciado - Listo para comenzar');
-      
-      // Dar instrucciones claras
-      alert('✅ Sistema reiniciado exitosamente\n\n' +
-            'Todos los datos históricos han sido eliminados.\n' +
-            'Ahora puedes registrar nuevos datos desde HOY.\n' +
-            'El calendario estará vacío y listo para nuevos registros.');
-
-      setLoading(false);
-
-    } catch (error) {
-      console.error('❌ Error al reiniciar el sistema:', error);
-      setCloudStatus('❌ Error al reiniciar');
-      alert('❌ Hubo un error al intentar reiniciar el sistema.\nPor favor, intenta nuevamente.');
-      setLoading(false);
-    }
-  };
-  // ===================== FIN FUNCIÓN RESETEAR SISTEMA =====================
-
   // Detectar cambio de mes y resetear
   useEffect(() => {
     const checkMonthChange = () => {
@@ -168,14 +66,17 @@ const App = () => {
       try {
         setLoading(true);
         
-        // 1. Autenticación anónima con Firebase
+        // 1. USAR SIEMPRE EL MISMO USUARIO ID (el que tiene tus datos)
+        const FIXED_USER_ID = 'bEY1p1kgVjgk88AlCGa7nM6I1de2';
+        
         try {
-          const userCredential = await signInAnonymously(auth);
-          setUser(userCredential.user);
+          // Crear objeto de usuario simulado con el ID fijo
+          const fixedUser = { uid: FIXED_USER_ID };
+          setUser(fixedUser);
           setCloudStatus('✅ Conectado a la nube');
           
-          // 2. Cargar datos de Firebase
-          await loadDataFromFirebase(userCredential.user.uid);
+          // 2. Cargar datos de Firebase con el ID fijo
+          await loadDataFromFirebase(FIXED_USER_ID);
           
           // 3. 🆕 Verificar si el día actual ya está guardado (después de cargar datos)
           await checkIfTodayIsCompleted();
@@ -614,19 +515,12 @@ const App = () => {
     }
   }, [todayData.paso1.acumulado, todayData.paso2.acumulado]);
 
-  // Guardar datos del día - FUNCIÓN CORREGIDA
+  // Guardar datos del día
   const saveData = async () => {
     try {
-      // Crear una copia actualizada de todayData con todos los cálculos
-      const dataToSave = {
-        ...todayData,
-        // Asegurarnos de que los porcentajes estén calculados
-        porcentaje: todayData.porcentaje || 0
-      };
-      
       const newHistoricalData = {
         ...historicalData,
-        [todayData.date]: dataToSave
+        [todayData.date]: { ...todayData }
       };
       
       setHistoricalData(newHistoricalData);
@@ -636,7 +530,7 @@ const App = () => {
       
       // Guardar en Firebase (si hay conexión)
       if (user) {
-        const firebaseSuccess = await saveToFirebase('historicalData', todayData.date, dataToSave);
+        const firebaseSuccess = await saveToFirebase('historicalData', todayData.date, todayData);
         if (firebaseSuccess) {
           setCloudStatus('💾 Guardado en la nube');
         } else {
@@ -644,19 +538,15 @@ const App = () => {
         }
       }
       
-      // 🆕 IMPORTANTE: Actualizar todayData con los datos guardados
-      setTodayData(dataToSave);
-      
       // 🆕 Marcar el día como completado
       setIsDayCompleted(true);
       
-      // 🆕 Marcar pasos como completados
+      // 🆕 Mantener los datos visibles (NO resetear todayData)
+      // Los datos permanecen en todayData para ser mostrados en modo solo lectura
       setCompletedSteps({ paso1: true, paso2: true });
-      
-      // 🆕 Mantener en la vista de resumen para mostrar los datos
       setCurrentView('resumen');
 
-      alert('✅ Día guardado exitosamente.\n\nLos datos se muestran en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
+      alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
     } catch (error) {
       console.error('Error saving day data:', error);
       alert('❌ Error al guardar los datos. Intenta nuevamente.');
@@ -692,9 +582,6 @@ const App = () => {
       // 🆕 Si se editó el día actual, actualizar todayData
       if (editData.date === currentDate) {
         setTodayData(editData);
-        setIsDayCompleted(true);
-        setCompletedSteps({ paso1: true, paso2: true });
-        setCurrentView('resumen');
       }
       
       setSelectedDate(null);
@@ -752,7 +639,7 @@ const App = () => {
     }
   };
 
-  // ===================== IMPORTAR DATOS CORREGIDO =====================
+  // Importar datos desde JSON
   const importData = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -763,123 +650,43 @@ const App = () => {
       try {
         const importedData = JSON.parse(e.target.result);
         
-        let newHistoricalData = {};
-        let newMonthlyData = {};
-        
-        // Procesar datos diarios
         if (importedData.datosDiarios) {
-          newHistoricalData = importedData.datosDiarios;
-          setHistoricalData(newHistoricalData);
-          localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
+          setHistoricalData(importedData.datosDiarios);
+          localStorage.setItem('historicalData', JSON.stringify(importedData.datosDiarios));
           
           // Guardar en Firebase si hay usuario
           if (user) {
-            for (const [date, data] of Object.entries(newHistoricalData)) {
+            for (const [date, data] of Object.entries(importedData.datosDiarios)) {
               await saveToFirebase('historicalData', date, data);
             }
           }
         }
         
-        // Procesar datos mensuales
         if (importedData.resumenesMensuales) {
-          newMonthlyData = importedData.resumenesMensuales;
-          setMonthlyData(newMonthlyData);
-          localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
+          setMonthlyData(importedData.resumenesMensuales);
+          localStorage.setItem('monthlyData', JSON.stringify(importedData.resumenesMensuales));
           
           // Guardar en Firebase si hay usuario
           if (user) {
-            for (const [month, data] of Object.entries(newMonthlyData)) {
+            for (const [month, data] of Object.entries(importedData.resumenesMensuales)) {
               await saveToFirebase('monthlyData', month, data);
             }
           }
         }
         
-        // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
-        if (newHistoricalData[currentDate]) {
-          console.log('✅ Día actual encontrado en datos importados');
-          
-          // Cargar los datos del día actual
-          const todayImportedData = newHistoricalData[currentDate];
-          
-          // Actualizar el estado todayData con los datos importados
-          setTodayData(todayImportedData);
-          
-          // Marcar como día completado
-          setIsDayCompleted(true);
-          
-          // Marcar pasos como completados
-          setCompletedSteps({ paso1: true, paso2: true });
-          
-          // Ir a la vista de resumen para mostrar los datos
-          setCurrentView('resumen');
-          
-          // Actualizar cloud status
-          setCloudStatus('💾 Datos importados y cargados');
-          
-          // Mostrar mensaje específico
-          alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
-        } else {
-          console.log('ℹ️ Día actual NO encontrado en datos importados');
-          
-          // Si no hay datos para hoy, cargar datos del día anterior (si existen)
-          if (Object.keys(newHistoricalData).length > 0) {
-            // Obtener la fecha más reciente de los datos importados
-            const dates = Object.keys(newHistoricalData).sort();
-            const lastDate = dates[dates.length - 1];
-            
-            if (lastDate < currentDate) {
-              // Si la última fecha importada es anterior a hoy, cargar acumulados
-              const lastData = newHistoricalData[lastDate];
-              
-              setTodayData(prev => ({
-                ...prev,
-                date: currentDate,
-                paso1: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso1.acumulado,
-                  acumulado: lastData.paso1.acumulado
-                },
-                paso2: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso2.acumulado,
-                  acumulado: lastData.paso2.acumulado
-                },
-                porcentaje: 0
-              }));
-              
-              alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
-            } else {
-              // Si no hay datos anteriores, empezar desde cero
-              setTodayData(prev => ({
-                ...prev,
-                date: currentDate,
-                paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-                paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-                porcentaje: 0
-              }));
-            }
-          }
-          
-          // Resetear pasos
-          setCompletedSteps({ paso1: false, paso2: false });
-          setCurrentView('paso1');
-          setCloudStatus('💾 Datos importados - Listo para continuar');
+        alert('📤 Datos importados exitosamente.');
+        await checkIfTodayIsCompleted();
+        if (!isDayCompleted) {
+          loadPreviousDayData();
         }
-        
       } catch (error) {
         console.error('Error importing data:', error);
-        setCloudStatus('❌ Error al importar');
         alert('❌ Error al importar los datos. Verifica el formato del archivo.');
       }
     };
     
     reader.readAsText(file);
   };
-  // ===================== FIN IMPORTAR DATOS CORREGIDO =====================
 
   // Generar días del mes para el calendario
   const generateCalendarDays = () => {
@@ -1024,38 +831,6 @@ const App = () => {
         )}
         
         <div className="mt-6 space-y-4">
-          {/* ===================== NUEVA SECCIÓN: REINICIAR SISTEMA ===================== */}
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-            <h4 className="font-bold text-red-900 mb-2">⚠️ Zona de peligro - Reiniciar sistema</h4>
-            <p className="text-sm text-red-700 mb-2">
-              <strong>Esta acción eliminará TODOS los datos del sistema:</strong>
-            </p>
-            <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
-              <li>Días históricos registrados</li>
-              <li>Meses consolidados</li>
-            </ul>
-            <p className="text-sm text-red-700 mb-3">
-              <strong>Después del reinicio:</strong>
-              <br/>
-              • El calendario aparecerá vacío
-              <br/>
-              • Podrás registrar datos desde el día actual
-              <br/>
-              • El sistema comenzará desde cero
-            </p>
-            <button
-              onClick={resetSystem}
-              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center space-x-2"
-            >
-              <Trash2 size={20} />
-              <span>REINICIAR SISTEMA COMPLETAMENTE</span>
-            </button>
-            <p className="text-xs text-red-600 mt-2 text-center">
-              ⚠️ Esta acción NO se puede deshacer
-            </p>
-          </div>
-          {/* ===================== FIN SECCIÓN REINICIAR SISTEMA ===================== */}
-          
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="font-bold text-blue-900 mb-2">📤 Importar/Exportar Datos</h4>
             <div className="flex space-x-4">
@@ -1066,7 +841,7 @@ const App = () => {
                 <Download size={18} />
                 <span>Exportar Todo</span>
               </button>
-              <label className="relative group flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
+              <label className="flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
                 <span>📥 Importar</span>
                 <input
                   type="file"
@@ -1074,14 +849,8 @@ const App = () => {
                   onChange={importData}
                   className="hidden"
                 />
-                <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-                  Importa datos exportados previamente
-                </div>
               </label>
             </div>
-            <p className="text-xs text-gray-600 mt-2 text-center">
-              💡 Si importas datos que incluyen el día actual, se cargarán automáticamente
-            </p>
           </div>
           
           <div className="text-sm text-gray-500">
@@ -1333,9 +1102,9 @@ const App = () => {
           {/* 🆕 Acumulado del mes hasta esta fecha */}
           <div className="border rounded-lg p-4 bg-gradient-to-r from-orange-50 to-pink-50">
             <h3 className="font-bold text-lg mb-3 text-orange-900">📊 Acumulado del Mes</h3>
-            <div className="">
+            <div className="text-center">
               <p className="text-gray-700 text-lg mb-2">
-
+                <strong>Total acumulado:</strong>
               </p>
               <p className="font-bold text-4xl text-orange-900">
                 {formatCurrency(monthAccumulated.total)}
@@ -1617,12 +1386,6 @@ const App = () => {
                 {(completedSteps.paso1 || isDayCompleted) && (
                   <div className="bg-blue-100 p-3 rounded-lg text-center text-blue-800 font-semibold">
                     ✓ Paso completado - Solo lectura
-                    {isDayCompleted && (
-                      <div className="mt-2 text-sm">
-                        <p>Dato 1: {formatCurrency(todayData.paso1.dato1)}</p>
-                        <p>Dato 2: {formatCurrency(todayData.paso1.dato2)}</p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1712,12 +1475,6 @@ const App = () => {
                 {(completedSteps.paso2 || isDayCompleted) && (
                   <div className="bg-green-100 p-3 rounded-lg text-center text-green-800 font-semibold">
                     ✓ Paso completado - Solo lectura
-                    {isDayCompleted && (
-                      <div className="mt-2 text-sm">
-                        <p>Dato 1: {formatCurrency(todayData.paso2.dato1)}</p>
-                        <p>Dato 2: {formatCurrency(todayData.paso2.dato2)}</p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1743,44 +1500,45 @@ const App = () => {
               <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <h3 className="font-bold text-blue-900 mb-3 text-lg">Paso 1</h3>
-                  <div className="space-y-2">
-                    <p className="text-gray-700">Dato 1: {formatCurrency(todayData.paso1.dato1)}</p>
-                    <p className="text-gray-700">Dato 2: {formatCurrency(todayData.paso1.dato2)}</p>
-                    <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso1.total)}</p>
-                    <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
-                      Acumulado del mes: {formatCurrency(todayData.paso1.acumulado)}
-                    </p>
-                  </div>
+                  <p className="text-gray-700">Total del día: <span className="font-bold">{formatCurrency(todayData.paso1.total)}</span></p>
+                  <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
+                    Acumulado del mes: {formatCurrency(todayData.paso1.acumulado)}
+                  </p>
                 </div>
 
                 <div className="bg-green-50 p-4 rounded-lg">
                   <h3 className="font-bold text-green-900 mb-3 text-lg">Paso 2</h3>
-                  <div className="space-y-2">
-                    <p className="text-gray-700">Dato 1: {formatCurrency(todayData.paso2.dato1)}</p>
-                    <p className="text-gray-700">Dato 2: {formatCurrency(todayData.paso2.dato2)}</p>
-                    <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso2.total)}</p>
-                    <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
-                      Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
-                    </p>
-                  </div>
+                  <p className="text-gray-700">Total del día: <span className="font-bold">{formatCurrency(todayData.paso2.total)}</span></p>
+                  <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
+                    Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
+                  </p>
                 </div>
 
-                <div className="bg-purple-100 p-6 rounded-lg border-2 border-purple-300">
-                  <h3 className="font-bold text-purple-900 text-xl mb-4">Cálculo Final</h3>
-                  <p className="text-gray-700 text-lg mb-3">
-                    <strong>Total acumulado del mes:</strong><br/>
-                    <span className="text-2xl font-bold text-purple-900">
-                      {formatCurrency(todayData.paso1.acumulado + todayData.paso2.acumulado)}
-                    </span>
+                {/* 🆕 Total del día (suma de ambos pasos del día) */}
+                <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
+                  <h3 className="font-bold text-purple-900 text-lg mb-3">Total del Día</h3>
+                  <p className="font-bold text-3xl text-purple-900">
+                    {formatCurrency(todayData.paso1.total + todayData.paso2.total)}
                   </p>
                   <div className="border-t-2 border-purple-300 pt-3 mt-3">
-                    <p className="font-bold text-purple-900 text-3xl">
+                    <p className="font-bold text-purple-900 text-2xl">
                       Porcentaje: {todayData.porcentaje.toFixed(2)}%
                     </p>
                   </div>
                 </div>
 
-                {!isDayCompleted ? (
+                {/* 🆕 Acumulado del mes (suma de ambos acumulados) */}
+                <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-6 rounded-lg border-2 border-orange-300">
+                  <h3 className="font-bold text-orange-900 text-xl mb-4">📊 Acumulado del Mes</h3>
+                  <p className="text-gray-700 text-lg mb-2">
+                    <strong>Total acumulado hasta hoy:</strong>
+                  </p>
+                  <p className="font-bold text-4xl text-orange-900">
+                    {formatCurrency(todayData.paso1.acumulado + todayData.paso2.acumulado)}
+                  </p>
+                </div>
+
+                {!isDayCompleted && (
                   <button
                     onClick={saveData}
                     className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
@@ -1788,13 +1546,6 @@ const App = () => {
                     <Save size={20} />
                     <span>Guardar Datos del Día</span>
                   </button>
-                ) : (
-                  <div className="bg-green-100 p-4 rounded-lg text-center text-green-800 font-semibold">
-                    ✅ Día guardado - Solo lectura
-                    <p className="text-sm font-normal mt-2">
-                      Los datos están guardados en el sistema. Podrás registrar el siguiente día mañana.
-                    </p>
-                  </div>
                 )}
               </div>
             </div>
