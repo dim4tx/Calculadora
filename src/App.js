@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud } from 'lucide-react';
+import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud, Trash2 } from 'lucide-react';
 import { db, auth } from './firebase';
 import { collection, doc, setDoc, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -42,6 +42,109 @@ const App = () => {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
+
+  // ===================== FUNCIÓN NUEVA: RESETEAR SISTEMA =====================
+  const resetSystem = async () => {
+    // Mostrar confirmación
+    const confirmReset = window.confirm(
+      '⚠️ ¿ESTÁS SEGURO DE QUE QUIERES REINICIAR EL SISTEMA COMPLETAMENTE?\n\n' +
+      'Esta acción eliminará:\n' +
+      '• Todos los datos históricos diarios\n' +
+      '• Todos los resúmenes mensuales\n' +
+      '• Datos en Firebase y localStorage\n\n' +
+      'El sistema comenzará desde CERO y podrás registrar datos\n' +
+      'desde la fecha actual.\n\n' +
+      'Esta acción NO se puede deshacer.\n\n' +
+      '¿Continuar?'
+    );
+
+    if (!confirmReset) {
+      return; // El usuario canceló
+    }
+
+    try {
+      setLoading(true);
+      setCloudStatus('🔄 Reiniciando sistema...');
+
+      // 1. Eliminar datos de Firebase si hay usuario conectado
+      if (user) {
+        try {
+          // Eliminar datos históricos de Firebase
+          const historicalRef = collection(db, 'users', user.uid, 'historicalData');
+          const historicalSnapshot = await getDocs(historicalRef);
+          for (const docSnap of historicalSnapshot.docs) {
+            await deleteDoc(doc(db, 'users', user.uid, 'historicalData', docSnap.id));
+          }
+
+          // Eliminar datos mensuales de Firebase
+          const monthlyRef = collection(db, 'users', user.uid, 'monthlyData');
+          const monthlySnapshot = await getDocs(monthlyRef);
+          for (const docSnap of monthlySnapshot.docs) {
+            await deleteDoc(doc(db, 'users', user.uid, 'monthlyData', docSnap.id));
+          }
+
+          console.log('✅ Datos eliminados de Firebase');
+        } catch (firebaseError) {
+          console.warn('⚠️ No se pudieron eliminar datos de Firebase:', firebaseError);
+        }
+      }
+
+      // 2. Limpiar localStorage
+      localStorage.removeItem('historicalData');
+      localStorage.removeItem('monthlyData');
+      localStorage.removeItem('currentMonth');
+      console.log('✅ localStorage limpiado');
+
+      // 3. Resetear TODOS los estados críticos
+      setHistoricalData({});
+      setMonthlyData({});
+      
+      // IMPORTANTE: Resetear el estado del día actual
+      setIsDayCompleted(false);
+      
+      // Resetear datos del día actual desde CERO
+      setTodayData({
+        date: currentDate,
+        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        porcentaje: 0
+      });
+      
+      // Resetear pasos completados
+      setCompletedSteps({ paso1: false, paso2: false });
+      
+      // Regresar al paso 1
+      setCurrentView('paso1');
+      
+      // Limpiar todas las vistas
+      setSelectedDate(null);
+      setShowMonthlyHistory(false);
+      setShowCalendar(false);
+      setIsEditing(false);
+      setEditData(null);
+      
+      // Resetear calendario al mes actual
+      setCalendarMonth(new Date());
+
+      // 4. Mostrar mensaje de éxito
+      setCloudStatus('✅ Sistema reiniciado - Listo para comenzar');
+      
+      // Dar instrucciones claras
+      alert('✅ Sistema reiniciado exitosamente\n\n' +
+            'Todos los datos históricos han sido eliminados.\n' +
+            'Ahora puedes registrar nuevos datos desde HOY.\n' +
+            'El calendario estará vacío y listo para nuevos registros.');
+
+      setLoading(false);
+
+    } catch (error) {
+      console.error('❌ Error al reiniciar el sistema:', error);
+      setCloudStatus('❌ Error al reiniciar');
+      alert('❌ Hubo un error al intentar reiniciar el sistema.\nPor favor, intenta nuevamente.');
+      setLoading(false);
+    }
+  };
+  // ===================== FIN FUNCIÓN RESETEAR SISTEMA =====================
 
   // Detectar cambio de mes y resetear
   useEffect(() => {
@@ -650,37 +753,116 @@ const App = () => {
       try {
         const importedData = JSON.parse(e.target.result);
         
+        let newHistoricalData = {};
+        let newMonthlyData = {};
+        
+        // Procesar datos diarios
         if (importedData.datosDiarios) {
-          setHistoricalData(importedData.datosDiarios);
-          localStorage.setItem('historicalData', JSON.stringify(importedData.datosDiarios));
+          newHistoricalData = importedData.datosDiarios;
+          setHistoricalData(newHistoricalData);
+          localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
           
           // Guardar en Firebase si hay usuario
           if (user) {
-            for (const [date, data] of Object.entries(importedData.datosDiarios)) {
+            for (const [date, data] of Object.entries(newHistoricalData)) {
               await saveToFirebase('historicalData', date, data);
             }
           }
         }
         
+        // Procesar datos mensuales
         if (importedData.resumenesMensuales) {
-          setMonthlyData(importedData.resumenesMensuales);
-          localStorage.setItem('monthlyData', JSON.stringify(importedData.resumenesMensuales));
+          newMonthlyData = importedData.resumenesMensuales;
+          setMonthlyData(newMonthlyData);
+          localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
           
           // Guardar en Firebase si hay usuario
           if (user) {
-            for (const [month, data] of Object.entries(importedData.resumenesMensuales)) {
+            for (const [month, data] of Object.entries(newMonthlyData)) {
               await saveToFirebase('monthlyData', month, data);
             }
           }
         }
         
-        alert('📤 Datos importados exitosamente.');
-        await checkIfTodayIsCompleted();
-        if (!isDayCompleted) {
-          loadPreviousDayData();
+        // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
+        if (newHistoricalData[currentDate]) {
+          console.log('✅ Día actual encontrado en datos importados');
+          
+          // Cargar los datos del día actual
+          const todayImportedData = newHistoricalData[currentDate];
+          
+          // Actualizar el estado todayData con los datos importados
+          setTodayData(todayImportedData);
+          
+          // Marcar como día completado
+          setIsDayCompleted(true);
+          
+          // Marcar pasos como completados
+          setCompletedSteps({ paso1: true, paso2: true });
+          
+          // Ir a la vista de resumen para mostrar los datos
+          setCurrentView('resumen');
+          
+          // Actualizar cloud status
+          setCloudStatus('💾 Datos importados y cargados');
+          
+          // Mostrar mensaje específico
+          alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
+        } else {
+          console.log('ℹ️ Día actual NO encontrado en datos importados');
+          
+          // Si no hay datos para hoy, cargar datos del día anterior (si existen)
+          if (Object.keys(newHistoricalData).length > 0) {
+            // Obtener la fecha más reciente de los datos importados
+            const dates = Object.keys(newHistoricalData).sort();
+            const lastDate = dates[dates.length - 1];
+            
+            if (lastDate < currentDate) {
+              // Si la última fecha importada es anterior a hoy, cargar acumulados
+              const lastData = newHistoricalData[lastDate];
+              
+              setTodayData(prev => ({
+                ...prev,
+                date: currentDate,
+                paso1: {
+                  dato1: '',
+                  dato2: '',
+                  total: 0,
+                  acumuladoAnterior: lastData.paso1.acumulado,
+                  acumulado: lastData.paso1.acumulado
+                },
+                paso2: {
+                  dato1: '',
+                  dato2: '',
+                  total: 0,
+                  acumuladoAnterior: lastData.paso2.acumulado,
+                  acumulado: lastData.paso2.acumulado
+                },
+                porcentaje: 0
+              }));
+              
+              alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
+            } else {
+              // Si no hay datos anteriores, empezar desde cero
+              setTodayData(prev => ({
+                ...prev,
+                date: currentDate,
+                paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+                paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+                porcentaje: 0
+              }));
+            }
+          }
+          
+          // Resetear pasos
+          setCompletedSteps({ paso1: false, paso2: false });
+          setCurrentView('paso1');
+          setCloudStatus('💾 Datos importados - Listo para continuar');
         }
+        
       } catch (error) {
         console.error('Error importing data:', error);
+        setCloudStatus('❌ Error al importar');
         alert('❌ Error al importar los datos. Verifica el formato del archivo.');
       }
     };
@@ -831,6 +1013,40 @@ const App = () => {
         )}
         
         <div className="mt-6 space-y-4">
+          {/* ===================== NUEVA SECCIÓN: REINICIAR SISTEMA ===================== */}
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+            <h4 className="font-bold text-red-900 mb-2">⚠️ Zona de peligro - Reiniciar sistema</h4>
+            <p className="text-sm text-red-700 mb-2">
+              <strong>Esta acción eliminará TODOS los datos del sistema:</strong>
+            </p>
+            <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
+              <li>Días históricos registrados</li>
+              <li>Meses consolidados</li>
+              <li>Datos en la nube (Firebase)</li>
+              <li>Datos locales (localStorage)</li>
+            </ul>
+            <p className="text-sm text-red-700 mb-3">
+              <strong>Después del reinicio:</strong>
+              <br/>
+              • El calendario aparecerá vacío
+              <br/>
+              • Podrás registrar datos desde el día actual
+              <br/>
+              • El sistema comenzará desde cero
+            </p>
+            <button
+              onClick={resetSystem}
+              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Trash2 size={20} />
+              <span>REINICIAR SISTEMA COMPLETAMENTE</span>
+            </button>
+            <p className="text-xs text-red-600 mt-2 text-center">
+              ⚠️ Esta acción NO se puede deshacer
+            </p>
+          </div>
+          {/* ===================== FIN SECCIÓN REINICIAR SISTEMA ===================== */}
+          
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="font-bold text-blue-900 mb-2">📤 Importar/Exportar Datos</h4>
             <div className="flex space-x-4">
@@ -841,7 +1057,7 @@ const App = () => {
                 <Download size={18} />
                 <span>Exportar Todo</span>
               </button>
-              <label className="flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
+              <label className="relative group flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
                 <span>📥 Importar</span>
                 <input
                   type="file"
@@ -849,8 +1065,14 @@ const App = () => {
                   onChange={importData}
                   className="hidden"
                 />
+                <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+                  Importa datos exportados previamente
+                </div>
               </label>
             </div>
+            <p className="text-xs text-gray-600 mt-2 text-center">
+              💡 Si importas datos que incluyen el día actual, se cargarán automáticamente
+            </p>
           </div>
           
           <div className="text-sm text-gray-500">
