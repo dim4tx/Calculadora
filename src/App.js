@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud } from 'lucide-react';
 import { db, auth } from './firebase';
-import { collection, doc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 const App = () => {
@@ -19,6 +19,9 @@ const App = () => {
   
   // Fecha actual REAL (sin simulador)
   const [currentDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // 🆕 Estado para saber si el día actual ya fue guardado
+  const [isDayCompleted, setIsDayCompleted] = useState(false);
   
   // Estado para datos del día actual
   const [todayData, setTodayData] = useState({
@@ -71,14 +74,24 @@ const App = () => {
           
           // 2. Cargar datos de Firebase
           await loadDataFromFirebase(userCredential.user.uid);
+          
+          // 3. 🆕 Verificar si el día actual ya está guardado (después de cargar datos)
+          await checkIfTodayIsCompleted();
+          
         } catch (firebaseError) {
           console.log('Firebase no disponible, usando modo local');
           setCloudStatus('⚠️ Usando modo local');
           loadDataFromLocalStorage();
+          
+          // Verificar día actual en modo local
+          const localHistorical = JSON.parse(localStorage.getItem('historicalData') || '{}');
+          if (localHistorical[currentDate]) {
+            setIsDayCompleted(true);
+            setTodayData(localHistorical[currentDate]);
+            setCompletedSteps({ paso1: true, paso2: true });
+            setCurrentView('resumen');
+          }
         }
-        
-        // 3. Cargar datos del día anterior
-        loadPreviousDayData();
         
         setLoading(false);
       } catch (err) {
@@ -90,6 +103,59 @@ const App = () => {
     
     loadInitialData();
   }, [currentDate]);
+
+  // 🆕 Función para verificar si el día actual ya fue guardado
+  const checkIfTodayIsCompleted = async () => {
+    try {
+      // Primero verificar en historicalData (que ya se cargó)
+      if (historicalData[currentDate]) {
+        console.log('✅ Día actual encontrado en historicalData');
+        setIsDayCompleted(true);
+        setTodayData(historicalData[currentDate]);
+        setCompletedSteps({ paso1: true, paso2: true });
+        setCurrentView('resumen');
+        return true;
+      }
+
+      // Si no está en memoria, verificar en Firebase
+      if (user) {
+        const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          console.log('✅ Día actual encontrado en Firebase');
+          const data = docSnap.data();
+          setIsDayCompleted(true);
+          setTodayData(data);
+          setCompletedSteps({ paso1: true, paso2: true });
+          setCurrentView('resumen');
+          
+          // Actualizar historicalData en memoria
+          setHistoricalData(prev => ({
+            ...prev,
+            [currentDate]: data
+          }));
+          return true;
+        } else {
+          console.log('ℹ️ Día actual NO encontrado - listo para registrar');
+          setIsDayCompleted(false);
+          return false;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Error verificando día actual:', error);
+      setIsDayCompleted(false);
+      return false;
+    }
+  };
+
+  // 🆕 Efecto para cargar día anterior después de verificar el día actual
+  useEffect(() => {
+    if (!loading && !isDayCompleted && Object.keys(historicalData).length >= 0) {
+      loadPreviousDayData();
+    }
+  }, [loading, isDayCompleted, historicalData]);
 
   // Función para cargar datos desde Firebase
   const loadDataFromFirebase = async (userId) => {
@@ -120,6 +186,11 @@ const App = () => {
       localStorage.setItem('historicalData', JSON.stringify(historical));
       localStorage.setItem('monthlyData', JSON.stringify(monthly));
       
+      console.log('✅ Datos cargados desde Firebase:', {
+        diasHistoricos: Object.keys(historical).length,
+        mesesConsolidados: Object.keys(monthly).length
+      });
+      
     } catch (error) {
       console.error('Error cargando de Firebase:', error);
       throw error;
@@ -146,6 +217,7 @@ const App = () => {
     try {
       const docRef = doc(db, 'users', user.uid, collectionName, documentId);
       await setDoc(docRef, data, { merge: true });
+      console.log(`✅ Guardado en Firebase: ${collectionName}/${documentId}`);
       return true;
     } catch (error) {
       console.error('Error guardando en Firebase:', error);
@@ -463,30 +535,15 @@ const App = () => {
         }
       }
       
-      // Resetear para el próximo día
-      setTodayData({
-        date: currentDate,
-        paso1: {
-          dato1: '',
-          dato2: '',
-          total: 0,
-          acumuladoAnterior: todayData.paso1.acumulado,
-          acumulado: todayData.paso1.acumulado
-        },
-        paso2: {
-          dato1: '',
-          dato2: '',
-          total: 0,
-          acumuladoAnterior: todayData.paso2.acumulado,
-          acumulado: todayData.paso2.acumulado
-        },
-        porcentaje: todayData.porcentaje
-      });
+      // 🆕 Marcar el día como completado
+      setIsDayCompleted(true);
+      
+      // 🆕 Mantener los datos visibles (NO resetear todayData)
+      // Los datos permanecen en todayData para ser mostrados en modo solo lectura
+      setCompletedSteps({ paso1: true, paso2: true });
+      setCurrentView('resumen');
 
-      setCurrentView('paso1');
-      setCompletedSteps({ paso1: false, paso2: false });
-
-      alert('✅ Día guardado exitosamente.');
+      alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
     } catch (error) {
       console.error('Error saving day data:', error);
       alert('❌ Error al guardar los datos. Intenta nuevamente.');
@@ -516,13 +573,17 @@ const App = () => {
       // Guardar en Firebase (si hay conexión)
       if (user) {
         await saveToFirebase('historicalData', editData.date, editData);
+        setCloudStatus('💾 Cambios guardados en la nube');
+      }
+      
+      // 🆕 Si se editó el día actual, actualizar todayData
+      if (editData.date === currentDate) {
+        setTodayData(editData);
       }
       
       setSelectedDate(null);
       setIsEditing(false);
       setEditData(null);
-      setCurrentView('paso1');
-      setCompletedSteps({ paso1: false, paso2: false });
 
       alert('✅ Cambios guardados exitosamente.');
     } catch (error) {
@@ -611,7 +672,10 @@ const App = () => {
         }
         
         alert('📤 Datos importados exitosamente.');
-        loadPreviousDayData();
+        await checkIfTodayIsCompleted();
+        if (!isDayCompleted) {
+          loadPreviousDayData();
+        }
       } catch (error) {
         console.error('Error importing data:', error);
         alert('❌ Error al importar los datos. Verifica el formato del archivo.');
@@ -887,6 +951,35 @@ const App = () => {
   const renderHistoricalView = () => {
     const data = editData || historicalData[selectedDate];
     
+    // 🆕 Calcular acumulado del mes hasta la fecha seleccionada
+    const calculateMonthAccumulated = () => {
+      const monthKey = selectedDate.slice(0, 7);
+      const monthDays = Object.entries(historicalData)
+        .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      
+      if (monthDays.length === 0) return { paso1: 0, paso2: 0, total: 0, porcentaje: 0 };
+      
+      // El acumulado es el del último día hasta la fecha seleccionada
+      const lastDay = monthDays[monthDays.length - 1][1];
+      const acum1 = lastDay.paso1.acumulado;
+      const acum2 = lastDay.paso2.acumulado;
+      const total = acum1 + acum2;
+      
+      const porcentaje = acum1 > 0 && acum2 > 0 
+        ? (Math.min(acum1, acum2) / Math.max(acum1, acum2)) * 100 
+        : 0;
+      
+      return {
+        paso1: acum1,
+        paso2: acum2,
+        total: total,
+        porcentaje: porcentaje
+      };
+    };
+    
+    const monthAccumulated = calculateMonthAccumulated();
+    
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex justify-between items-center mb-6">
@@ -991,14 +1084,27 @@ const App = () => {
             )}
           </div>
 
-          {/* Resumen */}
+          {/* 🆕 Resumen con acumulado del mes */}
           <div className="border rounded-lg p-4 bg-purple-50">
-            <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen</h3>
+            <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen del Día</h3>
             <div className="space-y-2 text-gray-700">
-              <p>Acumulado Paso 1: {formatCurrency(data.paso1.acumulado)}</p>
-              <p>Acumulado Paso 2: {formatCurrency(data.paso2.acumulado)}</p>
+              <p>Acumulado Paso 1 (día): {formatCurrency(data.paso1.acumulado)}</p>
+              <p>Acumulado Paso 2 (día): {formatCurrency(data.paso2.acumulado)}</p>
               <p className="font-bold text-2xl text-purple-900 mt-4">
                 Porcentaje: {data.porcentaje.toFixed(2)}%
+              </p>
+            </div>
+          </div>
+
+          {/* 🆕 Acumulado del mes hasta esta fecha */}
+          <div className="border rounded-lg p-4 bg-gradient-to-r from-orange-50 to-pink-50">
+            <h3 className="font-bold text-lg mb-3 text-orange-900">📊 Acumulado del Mes</h3>
+            <div className="">
+              <p className="text-gray-700 text-lg mb-2">
+
+              </p>
+              <p className="font-bold text-4xl text-orange-900">
+                {formatCurrency(monthAccumulated.total)}
               </p>
             </div>
           </div>
@@ -1105,6 +1211,12 @@ const App = () => {
                   day: 'numeric'
                 })}
               </p>
+              {/* 🆕 Mostrar si el día ya fue completado */}
+              {isDayCompleted && (
+                <div className="mt-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm inline-flex items-center">
+                  ✅ Día completado - Datos guardados
+                </div>
+              )}
               <div className="mt-2 flex space-x-2">
                 <span className={`text-sm px-3 py-1 rounded-full flex items-center ${
                   cloudStatus.includes('✅') ? 'bg-green-100 text-green-700' :
@@ -1146,11 +1258,11 @@ const App = () => {
           <div className="flex space-x-2">
             <button
               onClick={() => setCurrentView('paso1')}
-              disabled={currentView === 'paso2' || (currentView === 'paso1')}
+              disabled={!isDayCompleted && (currentView === 'paso2' || currentView === 'paso1')}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
                 currentView === 'paso1'
                   ? 'bg-blue-500 text-white'
-                  : completedSteps.paso2
+                  : completedSteps.paso2 || isDayCompleted
                   ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
@@ -1159,11 +1271,11 @@ const App = () => {
             </button>
             <button
               onClick={() => setCurrentView('paso2')}
-              disabled={currentView === 'paso2' || !completedSteps.paso1}
+              disabled={!isDayCompleted && (currentView === 'paso2' || !completedSteps.paso1)}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
                 currentView === 'paso2'
                   ? 'bg-green-500 text-white'
-                  : completedSteps.paso2
+                  : completedSteps.paso2 || isDayCompleted
                   ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
@@ -1172,11 +1284,11 @@ const App = () => {
             </button>
             <button
               onClick={() => setCurrentView('resumen')}
-              disabled={!completedSteps.paso2}
+              disabled={!completedSteps.paso2 && !isDayCompleted}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-colors ${
                 currentView === 'resumen'
                   ? 'bg-purple-500 text-white'
-                  : completedSteps.paso2
+                  : completedSteps.paso2 || isDayCompleted
                   ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
@@ -1192,7 +1304,19 @@ const App = () => {
             <div>
               <h2 className="text-2xl font-bold text-blue-900 mb-6">Paso 1</h2>
               
-              {todayData.paso1.acumuladoAnterior > 0 && (
+              {/* 🆕 Mensaje si el día ya está completado */}
+              {isDayCompleted && (
+                <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
+                  <p className="text-blue-800 font-semibold">
+                    ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
+                  </p>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Podrás registrar nuevos datos mañana o editar este día desde el historial.
+                  </p>
+                </div>
+              )}
+              
+              {todayData.paso1.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
                     📊 <strong>Total del día anterior ({getPreviousDay(currentDate)}):</strong><br/>
@@ -1208,9 +1332,9 @@ const App = () => {
                     type="text"
                     value={formatCurrency(todayData.paso1.dato1)}
                     onChange={(e) => handleInputChange('paso1', 'dato1', e.target.value)}
-                    disabled={completedSteps.paso1}
+                    disabled={completedSteps.paso1 || isDayCompleted}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso1
+                      completedSteps.paso1 || isDayCompleted
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-blue-300 focus:border-blue-500 focus:outline-none'
                     }`}
@@ -1224,9 +1348,9 @@ const App = () => {
                     type="text"
                     value={formatCurrency(todayData.paso1.dato2)}
                     onChange={(e) => handleInputChange('paso1', 'dato2', e.target.value)}
-                    disabled={completedSteps.paso1}
+                    disabled={completedSteps.paso1 || isDayCompleted}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso1
+                      completedSteps.paso1 || isDayCompleted
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-blue-300 focus:border-blue-500 focus:outline-none'
                     }`}
@@ -1241,7 +1365,7 @@ const App = () => {
                   </p>
                 </div>
 
-                {!completedSteps.paso1 && (
+                {!completedSteps.paso1 && !isDayCompleted && (
                   <button
                     onClick={continuarPaso1}
                     disabled={todayData.paso1.dato1 === '' || todayData.paso1.dato2 === ''}
@@ -1256,7 +1380,7 @@ const App = () => {
                   </button>
                 )}
                 
-                {completedSteps.paso1 && (
+                {(completedSteps.paso1 || isDayCompleted) && (
                   <div className="bg-blue-100 p-3 rounded-lg text-center text-blue-800 font-semibold">
                     ✓ Paso completado - Solo lectura
                   </div>
@@ -1269,7 +1393,19 @@ const App = () => {
             <div>
               <h2 className="text-2xl font-bold text-green-900 mb-6">Paso 2</h2>
 
-              {todayData.paso2.acumuladoAnterior > 0 && (
+              {/* 🆕 Mensaje si el día ya está completado */}
+              {isDayCompleted && (
+                <div className="bg-green-100 border-l-4 border-green-500 p-4 mb-4">
+                  <p className="text-green-800 font-semibold">
+                    ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
+                  </p>
+                  <p className="text-sm text-green-700 mt-1">
+                    Podrás registrar nuevos datos mañana o editar este día desde el historial.
+                  </p>
+                </div>
+              )}
+
+              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
                     📊 <strong>Total del día anterior ({getPreviousDay(currentDate)}):</strong><br/>
@@ -1285,9 +1421,9 @@ const App = () => {
                     type="text"
                     value={formatCurrency(todayData.paso2.dato1)}
                     onChange={(e) => handleInputChange('paso2', 'dato1', e.target.value)}
-                    disabled={completedSteps.paso2}
+                    disabled={completedSteps.paso2 || isDayCompleted}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso2
+                      completedSteps.paso2 || isDayCompleted
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-green-300 focus:border-green-500 focus:outline-none'
                     }`}
@@ -1301,9 +1437,9 @@ const App = () => {
                     type="text"
                     value={formatCurrency(todayData.paso2.dato2)}
                     onChange={(e) => handleInputChange('paso2', 'dato2', e.target.value)}
-                    disabled={completedSteps.paso2}
+                    disabled={completedSteps.paso2 || isDayCompleted}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso2
+                      completedSteps.paso2 || isDayCompleted
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-green-300 focus:border-green-500 focus:outline-none'
                     }`}
@@ -1318,7 +1454,7 @@ const App = () => {
                   </p>
                 </div>
 
-                {!completedSteps.paso2 && (
+                {!completedSteps.paso2 && !isDayCompleted && (
                   <button
                     onClick={continuarPaso2}
                     disabled={todayData.paso2.dato1 === '' || todayData.paso2.dato2 === ''}
@@ -1333,7 +1469,7 @@ const App = () => {
                   </button>
                 )}
                 
-                {completedSteps.paso2 && (
+                {(completedSteps.paso2 || isDayCompleted) && (
                   <div className="bg-green-100 p-3 rounded-lg text-center text-green-800 font-semibold">
                     ✓ Paso completado - Solo lectura
                   </div>
@@ -1345,6 +1481,18 @@ const App = () => {
           {currentView === 'resumen' && (
             <div>
               <h2 className="text-2xl font-bold text-purple-900 mb-6">Resumen del Día</h2>
+              
+              {/* 🆕 Mensaje si el día ya está completado */}
+              {isDayCompleted && (
+                <div className="bg-purple-100 border-l-4 border-purple-500 p-4 mb-4">
+                  <p className="text-purple-800 font-semibold">
+                    ✅ Este día ya fue guardado exitosamente.
+                  </p>
+                  <p className="text-sm text-purple-700 mt-1">
+                    Los datos están sincronizados con la nube. Podrás registrar el siguiente día mañana.
+                  </p>
+                </div>
+              )}
               
               <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
@@ -1378,13 +1526,15 @@ const App = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={saveData}
-                  className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <Save size={20} />
-                  <span>Guardar Datos del Día</span>
-                </button>
+                {!isDayCompleted && (
+                  <button
+                    onClick={saveData}
+                    className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+                  >
+                    <Save size={20} />
+                    <span>Guardar Datos del Día</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1393,7 +1543,7 @@ const App = () => {
         {/* Footer */}
         <div className="mt-4 text-center text-sm text-gray-500">
           <p>💡 Los datos se guardan automáticamente en tu navegador y se sincronizan con la nube.</p>
-          <p className="mt-1">☁️ {cloudStatus} • 📱 App lista para producción</p>
+          <p className="mt-1">☁️ {cloudStatus}</p>
         </div>
       </div>
     </div>
