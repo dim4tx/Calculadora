@@ -51,7 +51,7 @@ const App = () => {
       'Esta acción eliminará:\n' +
       '• Todos los datos históricos diarios\n' +
       '• Todos los resúmenes mensuales\n' +
-      '• Datos en Firebase y localStorage\n\n' +
+      '\n' +
       'El sistema comenzará desde CERO y podrás registrar datos\n' +
       'desde la fecha actual.\n\n' +
       'Esta acción NO se puede deshacer.\n\n' +
@@ -743,132 +743,122 @@ const App = () => {
   };
 
   // Importar datos desde JSON
-  const importData = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-      try {
-        const importedData = JSON.parse(e.target.result);
+  // Importar datos desde JSON - VERSIÓN CORREGIDA
+const importData = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  
+  reader.onload = async (e) => {
+    try {
+      const importedData = JSON.parse(e.target.result);
+      
+      let newHistoricalData = {};
+      let newMonthlyData = {};
+      
+      if (importedData.datosDiarios) {
+        newHistoricalData = importedData.datosDiarios;
+        setHistoricalData(newHistoricalData);
+        localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
         
-        let newHistoricalData = {};
-        let newMonthlyData = {};
-        
-        // Procesar datos diarios
-        if (importedData.datosDiarios) {
-          newHistoricalData = importedData.datosDiarios;
-          setHistoricalData(newHistoricalData);
-          localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
-          
-          // Guardar en Firebase si hay usuario
-          if (user) {
-            for (const [date, data] of Object.entries(newHistoricalData)) {
-              await saveToFirebase('historicalData', date, data);
-            }
+        // Guardar en Firebase si hay usuario
+        if (user) {
+          for (const [date, data] of Object.entries(newHistoricalData)) {
+            await saveToFirebase('historicalData', date, data);
           }
         }
-        
-        // Procesar datos mensuales
-        if (importedData.resumenesMensuales) {
-          newMonthlyData = importedData.resumenesMensuales;
-          setMonthlyData(newMonthlyData);
-          localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
-          
-          // Guardar en Firebase si hay usuario
-          if (user) {
-            for (const [month, data] of Object.entries(newMonthlyData)) {
-              await saveToFirebase('monthlyData', month, data);
-            }
-          }
-        }
-        
-        // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
-        if (newHistoricalData[currentDate]) {
-          console.log('✅ Día actual encontrado en datos importados');
-          
-          // Cargar los datos del día actual
-          const todayImportedData = newHistoricalData[currentDate];
-          
-          // Actualizar el estado todayData con los datos importados
-          setTodayData(todayImportedData);
-          
-          // Marcar como día completado
-          setIsDayCompleted(true);
-          
-          // Marcar pasos como completados
-          setCompletedSteps({ paso1: true, paso2: true });
-          
-          // Ir a la vista de resumen para mostrar los datos
-          setCurrentView('resumen');
-          
-          // Actualizar cloud status
-          setCloudStatus('💾 Datos importados y cargados');
-          
-          // Mostrar mensaje específico
-          alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
-        } else {
-          console.log('ℹ️ Día actual NO encontrado en datos importados');
-          
-          // Si no hay datos para hoy, cargar datos del día anterior (si existen)
-          if (Object.keys(newHistoricalData).length > 0) {
-            // Obtener la fecha más reciente de los datos importados
-            const dates = Object.keys(newHistoricalData).sort();
-            const lastDate = dates[dates.length - 1];
-            
-            if (lastDate < currentDate) {
-              // Si la última fecha importada es anterior a hoy, cargar acumulados
-              const lastData = newHistoricalData[lastDate];
-              
-              setTodayData(prev => ({
-                ...prev,
-                date: currentDate,
-                paso1: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso1.acumulado,
-                  acumulado: lastData.paso1.acumulado
-                },
-                paso2: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso2.acumulado,
-                  acumulado: lastData.paso2.acumulado
-                },
-                porcentaje: 0
-              }));
-              
-              alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
-            } else {
-              // Si no hay datos anteriores, empezar desde cero
-              setTodayData(prev => ({
-                ...prev,
-                date: currentDate,
-                paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-                paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-                porcentaje: 0
-              }));
-            }
-          }
-          
-          // Resetear pasos
-          setCompletedSteps({ paso1: false, paso2: false });
-          setCurrentView('paso1');
-          setCloudStatus('💾 Datos importados - Listo para continuar');
-        }
-        
-      } catch (error) {
-        console.error('Error importing data:', error);
-        setCloudStatus('❌ Error al importar');
-        alert('❌ Error al importar los datos. Verifica el formato del archivo.');
       }
-    };
-    
-    reader.readAsText(file);
+      
+      if (importedData.resumenesMensuales) {
+        newMonthlyData = importedData.resumenesMensuales;
+        setMonthlyData(newMonthlyData);
+        localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
+        
+        // Guardar en Firebase si hay usuario
+        if (user) {
+          for (const [month, data] of Object.entries(newMonthlyData)) {
+            await saveToFirebase('monthlyData', month, data);
+          }
+        }
+      }
+      
+      // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
+      if (newHistoricalData[currentDate]) {
+        console.log('✅ Día actual encontrado en datos importados');
+        
+        // Cargar los datos del día actual
+        const todayImportedData = newHistoricalData[currentDate];
+        
+        // ACTUALIZAR EL ESTADO todayData CON LOS DATOS IMPORTADOS
+        setTodayData(todayImportedData);
+        
+        // Marcar como día completado
+        setIsDayCompleted(true);
+        
+        // Marcar pasos como completados
+        setCompletedSteps({ paso1: true, paso2: true });
+        
+        // Ir a la vista de resumen para mostrar los datos
+        setCurrentView('resumen');
+        
+        // Actualizar cloud status
+        setCloudStatus('💾 Datos importados y cargados');
+        
+        // Mostrar mensaje específico
+        alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
+      } else {
+        console.log('ℹ️ Día actual NO encontrado en datos importados');
+        
+        // Si no hay datos para hoy, cargar datos del día anterior (si existen)
+        if (Object.keys(newHistoricalData).length > 0) {
+          // Obtener la fecha más reciente de los datos importados
+          const dates = Object.keys(newHistoricalData).sort();
+          const lastDate = dates[dates.length - 1];
+          
+          if (lastDate < currentDate) {
+            // Si la última fecha importada es anterior a hoy, cargar acumulados
+            const lastData = newHistoricalData[lastDate];
+            
+            setTodayData(prev => ({
+              ...prev,
+              date: currentDate,
+              paso1: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: lastData.paso1.acumulado,
+                acumulado: lastData.paso1.acumulado
+              },
+              paso2: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: lastData.paso2.acumulado,
+                acumulado: lastData.paso2.acumulado
+              },
+              porcentaje: 0
+            }));
+            
+            alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
+          }
+        }
+        
+        // Resetear pasos
+        setCompletedSteps({ paso1: false, paso2: false });
+        setCurrentView('paso1');
+        setCloudStatus('💾 Datos importados - Listo para continuar');
+      }
+      
+    } catch (error) {
+      console.error('Error importing data:', error);
+      setCloudStatus('❌ Error al importar');
+      alert('❌ Error al importar los datos. Verifica el formato del archivo.');
+    }
   };
+  
+  reader.readAsText(file);
+};
 
   // Generar días del mes para el calendario
   const generateCalendarDays = () => {
@@ -1022,8 +1012,6 @@ const App = () => {
             <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
               <li>Días históricos registrados</li>
               <li>Meses consolidados</li>
-              <li>Datos en la nube (Firebase)</li>
-              <li>Datos locales (localStorage)</li>
             </ul>
             <p className="text-sm text-red-700 mb-3">
               <strong>Después del reinicio:</strong>
