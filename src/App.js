@@ -1398,10 +1398,7 @@ const App = () => {
           {/* 🆕 Acumulado del mes hasta esta fecha */}
           <div className="border rounded-lg p-4 bg-gradient-to-r from-orange-50 to-pink-50">
             <h3 className="font-bold text-lg mb-3 text-orange-900">📊 Acumulado del Mes</h3>
-            <div className="text-center">
-              <p className="text-gray-700 text-lg mb-2">
-                <strong>Total acumulado:</strong>
-              </p>
+            <div className="">
               <p className="font-bold text-4xl text-orange-900">
                 {formatCurrency(monthAccumulated.total)}
               </p>
