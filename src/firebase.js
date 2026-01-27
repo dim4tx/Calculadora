@@ -1,27 +1,28 @@
-// src/firebase.js
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-// ✅ CONFIGURACIÓN COMPLETA DE FIREBASE
+// Configuración de Firebase usando variables de entorno
 const firebaseConfig = {
-  apiKey: "AIzaSyBEzwcdUjI0rx8ZeBLNFSBAbwZzzYLCeIY", // ✅
-  authDomain: "calculadora-ee028.firebaseapp.com", // ✅
-  projectId: "calculadora-ee028", // ✅
-  storageBucket: "calculadora-ee028.firebasestorage.app", // ✅ (nota: .app no .com)
-  messagingSenderId: "129033173942", // ✅
-  appId: "1:129033173942:web:6b9b8c7b05e6abb21c9f17", // ✅
-  measurementId: "G-J1E1N2RN6G" // ✅ (opcional para analytics)
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "AIzaSyBEzwcdUjI0rx8ZeBLNFSBAbwZzzYLCeIY",
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "calculadora-ee028.firebaseapp.com",
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "calculadora-ee028",
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "calculadora-ee028.firebasestorage.app",
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "129033173942",
+  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:129033173942:web:6b9b8c7b05e6abb21c9f17",
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-J1E1N2RN6G"
 };
+
+console.log('🔥 Firebase Config:', {
+  apiKey: firebaseConfig.apiKey ? '✅ Configurado' : '❌ No configurado',
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  environment: process.env.NODE_ENV
+});
 
 // Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 
-// Obtener servicios que NECESITAMOS
-export const db = getFirestore(app);  // Para base de datos
-export const auth = getAuth(app);     // Para autenticación
-
-// NO necesitamos analytics por ahora, pero puedes agregarlo si quieres:
-// import { getAnalytics } from "firebase/analytics";
-// const analytics = getAnalytics(app);
-
+// Obtener servicios
+export const db = getFirestore(app);
+export const auth = getAuth(app);
