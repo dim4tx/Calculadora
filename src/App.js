@@ -163,6 +163,105 @@ const App = () => {
     checkMonthChange();
   }, [currentDate]);
 
+  // 🆕 Efecto para actualizar todayData cuando se carga historicalData
+  useEffect(() => {
+    if (!loading && historicalData[currentDate]) {
+      console.log('🔄 Actualizando todayData con datos del día actual desde historicalData');
+      setTodayData(historicalData[currentDate]);
+      setIsDayCompleted(true);
+      setCompletedSteps({ paso1: true, paso2: true });
+      setCurrentView('resumen');
+    }
+  }, [historicalData, currentDate, loading]);
+
+  // 🆕 Función para verificar si el día actual ya fue guardado
+  const checkIfTodayIsCompleted = async () => {
+    try {
+      console.log('🔄 Verificando si el día actual está completado...', currentDate);
+      
+      // Verificar primero en historicalData que ya se cargó
+      if (historicalData && historicalData[currentDate]) {
+        console.log('✅ Día actual encontrado en historicalData en memoria');
+        const data = historicalData[currentDate];
+        
+        setIsDayCompleted(true);
+        setTodayData(data);
+        setCompletedSteps({ paso1: true, paso2: true });
+        setCurrentView('resumen');
+        
+        return true;
+      }
+
+      // Si no está en memoria, verificar en localStorage
+      const savedHistorical = JSON.parse(localStorage.getItem('historicalData') || '{}');
+      if (savedHistorical[currentDate]) {
+        console.log('✅ Día actual encontrado en localStorage');
+        const data = savedHistorical[currentDate];
+        
+        // Actualizar historicalData en memoria
+        setHistoricalData(prev => ({
+          ...prev,
+          [currentDate]: data
+        }));
+        
+        setIsDayCompleted(true);
+        setTodayData(data);
+        setCompletedSteps({ paso1: true, paso2: true });
+        setCurrentView('resumen');
+        
+        return true;
+      }
+
+      // Si no está en localStorage, verificar en Firebase
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            console.log('✅ Día actual encontrado en Firebase');
+            const data = docSnap.data();
+            
+            // Actualizar historicalData en memoria
+            setHistoricalData(prev => ({
+              ...prev,
+              [currentDate]: data
+            }));
+            
+            // Actualizar localStorage
+            const updatedHistorical = { ...savedHistorical, [currentDate]: data };
+            localStorage.setItem('historicalData', JSON.stringify(updatedHistorical));
+            
+            setIsDayCompleted(true);
+            setTodayData(data);
+            setCompletedSteps({ paso1: true, paso2: true });
+            setCurrentView('resumen');
+            
+            return true;
+          }
+        } catch (firebaseError) {
+          console.log('ℹ️ Error al conectar con Firebase para verificar día actual');
+        }
+      }
+
+      console.log('ℹ️ Día actual NO encontrado - listo para registrar');
+      setIsDayCompleted(false);
+      
+      // Cargar datos del día anterior para continuar acumulado
+      loadPreviousDayData();
+      
+      return false;
+    } catch (error) {
+      console.error('Error verificando día actual:', error);
+      setIsDayCompleted(false);
+      
+      // Intentar cargar datos del día anterior
+      loadPreviousDayData();
+      
+      return false;
+    }
+  };
+
   // Cargar datos iniciales CON FIREBASE
   useEffect(() => {
     const loadInitialData = async () => {
@@ -181,25 +280,19 @@ const App = () => {
           // 2. Cargar datos de Firebase con el ID fijo
           await loadDataFromFirebase(FIXED_USER_ID);
           
-          // 3. 🆕 Verificar si el día actual ya está guardado (después de cargar datos)
-          await checkIfTodayIsCompleted();
-          
         } catch (firebaseError) {
           console.log('Firebase no disponible, usando modo local');
           setCloudStatus('⚠️ Usando modo local');
           loadDataFromLocalStorage();
-          
-          // Verificar día actual en modo local
-          const localHistorical = JSON.parse(localStorage.getItem('historicalData') || '{}');
-          if (localHistorical[currentDate]) {
-            setIsDayCompleted(true);
-            setTodayData(localHistorical[currentDate]);
-            setCompletedSteps({ paso1: true, paso2: true });
-            setCurrentView('resumen');
-          }
         }
         
-        setLoading(false);
+        // 3. 🆕 Verificar si el día actual ya está guardado (DESPUÉS de cargar todos los datos)
+        // IMPORTANTE: Esperar un momento para que los estados se actualicen
+        setTimeout(async () => {
+          await checkIfTodayIsCompleted();
+          setLoading(false);
+        }, 500);
+        
       } catch (err) {
         setError('Error al cargar los datos');
         console.error('Error loading data:', err);
@@ -210,56 +303,14 @@ const App = () => {
     loadInitialData();
   }, [currentDate]);
 
-  // 🆕 Función para verificar si el día actual ya fue guardado
-  const checkIfTodayIsCompleted = async () => {
-    try {
-      // Primero verificar en historicalData (que ya se cargó)
-      if (historicalData[currentDate]) {
-        console.log('✅ Día actual encontrado en historicalData');
-        setIsDayCompleted(true);
-        setTodayData(historicalData[currentDate]);
-        setCompletedSteps({ paso1: true, paso2: true });
-        setCurrentView('resumen');
-        return true;
-      }
-
-      // Si no está en memoria, verificar en Firebase
-      if (user) {
-        const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          console.log('✅ Día actual encontrado en Firebase');
-          const data = docSnap.data();
-          setIsDayCompleted(true);
-          setTodayData(data);
-          setCompletedSteps({ paso1: true, paso2: true });
-          setCurrentView('resumen');
-          
-          // Actualizar historicalData en memoria
-          setHistoricalData(prev => ({
-            ...prev,
-            [currentDate]: data
-          }));
-          return true;
-        } else {
-          console.log('ℹ️ Día actual NO encontrado - listo para registrar');
-          setIsDayCompleted(false);
-          return false;
-        }
-      }
-      return false;
-    } catch (error) {
-      console.error('Error verificando día actual:', error);
-      setIsDayCompleted(false);
-      return false;
-    }
-  };
-
   // 🆕 Efecto para cargar día anterior después de verificar el día actual
   useEffect(() => {
     if (!loading && !isDayCompleted && Object.keys(historicalData).length >= 0) {
-      loadPreviousDayData();
+      // Si no está completado y tenemos datos históricos, cargar acumulados
+      if (Object.keys(historicalData).length > 0) {
+        console.log('📊 Cargando acumulados desde datos históricos');
+        loadPreviousDayData();
+      }
     }
   }, [loading, isDayCompleted, historicalData]);
 
@@ -311,6 +362,11 @@ const App = () => {
       
       const savedMonths = JSON.parse(localStorage.getItem('monthlyData') || '{}');
       setMonthlyData(savedMonths);
+      
+      console.log('✅ Datos cargados desde localStorage:', {
+        diasHistoricos: Object.keys(savedHistorical).length,
+        mesesConsolidados: Object.keys(savedMonths).length
+      });
     } catch (err) {
       console.error('Error cargando localStorage:', err);
     }
@@ -470,48 +526,78 @@ const App = () => {
     return date.toISOString().split('T')[0];
   };
 
-  // Cargar datos del día anterior
+  // Cargar datos del día anterior - VERSIÓN MEJORADA
   const loadPreviousDayData = () => {
     try {
+      console.log('🔄 Cargando datos del día anterior...');
+      
       const yesterday = getPreviousDay(currentDate);
-
-      if (historicalData[yesterday]) {
-        const prevData = historicalData[yesterday];
-
-        setTodayData(prev => ({
-          ...prev,
-          date: currentDate,
-          paso1: {
-            dato1: '',
-            dato2: '',
-            total: 0,
-            acumuladoAnterior: prevData.paso1.acumulado,
-            acumulado: prevData.paso1.acumulado
-          },
-          paso2: {
-            dato1: '',
-            dato2: '',
-            total: 0,
-            acumuladoAnterior: prevData.paso2.acumulado,
-            acumulado: prevData.paso2.acumulado
-          },
-          porcentaje: 0
-        }));
-      } else {
-        // No hay día anterior, empezar desde cero
-        setTodayData(prev => ({
-          ...prev,
-          date: currentDate,
-          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-          porcentaje: 0
-        }));
+      console.log('Fecha de ayer:', yesterday);
+      
+      // Buscar el último día con datos (puede no ser exactamente ayer)
+      const dates = Object.keys(historicalData).sort();
+      console.log('Fechas disponibles:', dates);
+      
+      if (dates.length > 0) {
+        // Encontrar la fecha más reciente anterior a hoy
+        let lastDate = null;
+        for (let i = dates.length - 1; i >= 0; i--) {
+          if (dates[i] < currentDate) {
+            lastDate = dates[i];
+            break;
+          }
+        }
+        
+        if (lastDate) {
+          console.log('📅 Último día con datos encontrado:', lastDate);
+          const prevData = historicalData[lastDate];
+          
+          setTodayData(prev => ({
+            ...prev,
+            date: currentDate,
+            paso1: {
+              dato1: '',
+              dato2: '',
+              total: 0,
+              acumuladoAnterior: prevData.paso1.acumulado,
+              acumulado: prevData.paso1.acumulado
+            },
+            paso2: {
+              dato1: '',
+              dato2: '',
+              total: 0,
+              acumuladoAnterior: prevData.paso2.acumulado,
+              acumulado: prevData.paso2.acumulado
+            },
+            porcentaje: 0
+          }));
+          
+          console.log('✅ Acumulados cargados desde:', lastDate);
+          return;
+        }
       }
+      
+      // No hay día anterior, empezar desde cero
+      console.log('ℹ️ No hay datos anteriores, empezando desde cero');
+      setTodayData(prev => ({
+        ...prev,
+        date: currentDate,
+        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        porcentaje: 0
+      }));
 
-      setCompletedSteps({ paso1: false, paso2: false });
-      setCurrentView('paso1');
     } catch (error) {
       console.error('Error loading previous day data:', error);
+      
+      // En caso de error, empezar desde cero
+      setTodayData(prev => ({
+        ...prev,
+        date: currentDate,
+        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        porcentaje: 0
+      }));
     }
   };
 
@@ -618,14 +704,17 @@ const App = () => {
     }
   }, [todayData.paso1.acumulado, todayData.paso2.acumulado]);
 
-  // Guardar datos del día
+  // Guardar datos del día - VERSIÓN MEJORADA
   const saveData = async () => {
     try {
+      console.log('💾 Guardando datos para el día:', todayData.date);
+      
       const newHistoricalData = {
         ...historicalData,
         [todayData.date]: { ...todayData }
       };
       
+      // Actualizar el estado historicalData inmediatamente
       setHistoricalData(newHistoricalData);
       
       // Guardar en localStorage
@@ -643,13 +732,11 @@ const App = () => {
       
       // 🆕 Marcar el día como completado
       setIsDayCompleted(true);
-      
-      // 🆕 Mantener los datos visibles (NO resetear todayData)
-      // Los datos permanecen en todayData para ser mostrados en modo solo lectura
       setCompletedSteps({ paso1: true, paso2: true });
       setCurrentView('resumen');
 
       alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
+      
     } catch (error) {
       console.error('Error saving day data:', error);
       alert('❌ Error al guardar los datos. Intenta nuevamente.');
@@ -742,123 +829,122 @@ const App = () => {
     }
   };
 
-  // Importar datos desde JSON
   // Importar datos desde JSON - VERSIÓN CORREGIDA
-const importData = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  
-  reader.onload = async (e) => {
-    try {
-      const importedData = JSON.parse(e.target.result);
-      
-      let newHistoricalData = {};
-      let newMonthlyData = {};
-      
-      if (importedData.datosDiarios) {
-        newHistoricalData = importedData.datosDiarios;
-        setHistoricalData(newHistoricalData);
-        localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
+  const importData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
         
-        // Guardar en Firebase si hay usuario
-        if (user) {
-          for (const [date, data] of Object.entries(newHistoricalData)) {
-            await saveToFirebase('historicalData', date, data);
-          }
-        }
-      }
-      
-      if (importedData.resumenesMensuales) {
-        newMonthlyData = importedData.resumenesMensuales;
-        setMonthlyData(newMonthlyData);
-        localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
+        let newHistoricalData = {};
+        let newMonthlyData = {};
         
-        // Guardar en Firebase si hay usuario
-        if (user) {
-          for (const [month, data] of Object.entries(newMonthlyData)) {
-            await saveToFirebase('monthlyData', month, data);
-          }
-        }
-      }
-      
-      // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
-      if (newHistoricalData[currentDate]) {
-        console.log('✅ Día actual encontrado en datos importados');
-        
-        // Cargar los datos del día actual
-        const todayImportedData = newHistoricalData[currentDate];
-        
-        // ACTUALIZAR EL ESTADO todayData CON LOS DATOS IMPORTADOS
-        setTodayData(todayImportedData);
-        
-        // Marcar como día completado
-        setIsDayCompleted(true);
-        
-        // Marcar pasos como completados
-        setCompletedSteps({ paso1: true, paso2: true });
-        
-        // Ir a la vista de resumen para mostrar los datos
-        setCurrentView('resumen');
-        
-        // Actualizar cloud status
-        setCloudStatus('💾 Datos importados y cargados');
-        
-        // Mostrar mensaje específico
-        alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
-      } else {
-        console.log('ℹ️ Día actual NO encontrado en datos importados');
-        
-        // Si no hay datos para hoy, cargar datos del día anterior (si existen)
-        if (Object.keys(newHistoricalData).length > 0) {
-          // Obtener la fecha más reciente de los datos importados
-          const dates = Object.keys(newHistoricalData).sort();
-          const lastDate = dates[dates.length - 1];
+        if (importedData.datosDiarios) {
+          newHistoricalData = importedData.datosDiarios;
+          setHistoricalData(newHistoricalData);
+          localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
           
-          if (lastDate < currentDate) {
-            // Si la última fecha importada es anterior a hoy, cargar acumulados
-            const lastData = newHistoricalData[lastDate];
-            
-            setTodayData(prev => ({
-              ...prev,
-              date: currentDate,
-              paso1: {
-                dato1: '',
-                dato2: '',
-                total: 0,
-                acumuladoAnterior: lastData.paso1.acumulado,
-                acumulado: lastData.paso1.acumulado
-              },
-              paso2: {
-                dato1: '',
-                dato2: '',
-                total: 0,
-                acumuladoAnterior: lastData.paso2.acumulado,
-                acumulado: lastData.paso2.acumulado
-              },
-              porcentaje: 0
-            }));
-            
-            alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
+          // Guardar en Firebase si hay usuario
+          if (user) {
+            for (const [date, data] of Object.entries(newHistoricalData)) {
+              await saveToFirebase('historicalData', date, data);
+            }
           }
         }
         
-        // Resetear pasos
-        setCompletedSteps({ paso1: false, paso2: false });
-        setCurrentView('paso1');
-        setCloudStatus('💾 Datos importados - Listo para continuar');
+        if (importedData.resumenesMensuales) {
+          newMonthlyData = importedData.resumenesMensuales;
+          setMonthlyData(newMonthlyData);
+          localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
+          
+          // Guardar en Firebase si hay usuario
+          if (user) {
+            for (const [month, data] of Object.entries(newMonthlyData)) {
+              await saveToFirebase('monthlyData', month, data);
+            }
+          }
+        }
+        
+        // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
+        if (newHistoricalData[currentDate]) {
+          console.log('✅ Día actual encontrado en datos importados');
+          
+          // Cargar los datos del día actual
+          const todayImportedData = newHistoricalData[currentDate];
+          
+          // ACTUALIZAR EL ESTADO todayData CON LOS DATOS IMPORTADOS
+          setTodayData(todayImportedData);
+          
+          // Marcar como día completado
+          setIsDayCompleted(true);
+          
+          // Marcar pasos como completados
+          setCompletedSteps({ paso1: true, paso2: true });
+          
+          // Ir a la vista de resumen para mostrar los datos
+          setCurrentView('resumen');
+          
+          // Actualizar cloud status
+          setCloudStatus('💾 Datos importados y cargados');
+          
+          // Mostrar mensaje específico
+          alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
+        } else {
+          console.log('ℹ️ Día actual NO encontrado en datos importados');
+          
+          // Si no hay datos para hoy, cargar datos del día anterior (si existen)
+          if (Object.keys(newHistoricalData).length > 0) {
+            // Obtener la fecha más reciente de los datos importados
+            const dates = Object.keys(newHistoricalData).sort();
+            const lastDate = dates[dates.length - 1];
+            
+            if (lastDate < currentDate) {
+              // Si la última fecha importada es anterior a hoy, cargar acumulados
+              const lastData = newHistoricalData[lastDate];
+              
+              setTodayData(prev => ({
+                ...prev,
+                date: currentDate,
+                paso1: {
+                  dato1: '',
+                  dato2: '',
+                  total: 0,
+                  acumuladoAnterior: lastData.paso1.acumulado,
+                  acumulado: lastData.paso1.acumulado
+                },
+                paso2: {
+                  dato1: '',
+                  dato2: '',
+                  total: 0,
+                  acumuladoAnterior: lastData.paso2.acumulado,
+                  acumulado: lastData.paso2.acumulado
+                },
+                porcentaje: 0
+              }));
+              
+              alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
+            }
+          }
+          
+          // Resetear pasos
+          setCompletedSteps({ paso1: false, paso2: false });
+          setCurrentView('paso1');
+          setCloudStatus('💾 Datos importados - Listo para continuar');
+        }
+        
+      } catch (error) {
+        console.error('Error importing data:', error);
+        setCloudStatus('❌ Error al importar');
+        alert('❌ Error al importar los datos. Verifica el formato del archivo.');
       }
-      
-    } catch (error) {
-      console.error('Error importing data:', error);
-      setCloudStatus('❌ Error al importar');
-      alert('❌ Error al importar los datos. Verifica el formato del archivo.');
-    }
+    };
+    
+    reader.readAsText(file);
   };
-  
-  reader.readAsText(file);
-};
 
   // Generar días del mes para el calendario
   const generateCalendarDays = () => {
@@ -1372,7 +1458,8 @@ const importData = (event) => {
       <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow-lg p-8 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Conectando con Firebase...</p>
+          <p className="text-gray-600">Cargando datos...</p>
+          <p className="text-sm text-gray-500 mt-2">Verificando si hoy ya fue registrado</p>
         </div>
       </div>
     );
@@ -1448,6 +1535,13 @@ const importData = (event) => {
                   <span>Exportar Datos</span>
                 </button>
               </div>
+              {/* 🆕 Mensaje de depuración */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Debug: {Object.keys(historicalData).length} días en memoria | 
+                  Hoy en historical: {historicalData[currentDate] ? 'SÍ' : 'NO'}
+                </div>
+              )}
             </div>
             <button
               onClick={() => setShowCalendar(true)}
@@ -1532,8 +1626,7 @@ const importData = (event) => {
               {todayData.paso1.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del día anterior ({getPreviousDay(currentDate)}):</strong><br/>
-                    Paso 1: {formatCurrency(historicalData[getPreviousDay(currentDate)]?.paso1?.total || 0)}
+                    📊 <strong>Total acumulado anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
@@ -1621,8 +1714,7 @@ const importData = (event) => {
               {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del día anterior ({getPreviousDay(currentDate)}):</strong><br/>
-                    Paso 2: {formatCurrency(historicalData[getPreviousDay(currentDate)]?.paso2?.total || 0)}
+                    📊 <strong>Total acumulado anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
