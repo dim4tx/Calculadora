@@ -264,79 +264,138 @@ const App = () => {
   };
 
   // 🆕 Efecto para actualizar todayData cuando se carga historicalData
-  useEffect(() => {
-    if (!loading && historicalData[currentDate]) {
-      console.log('🔄 Actualizando todayData con datos del día actual desde historicalData');
-      setTodayData(historicalData[currentDate]);
+useEffect(() => {
+  if (!loading && historicalData[currentDate]) {
+    console.log('🔄 Actualizando todayData con datos del día actual desde historicalData');
+    const dayData = historicalData[currentDate];
+    
+    // 🆕 CORRECCIÓN: Cargar TODOS los datos, no solo algunos
+    setTodayData({
+      date: currentDate,
+      paso1: {
+        dato1: dayData.paso1.dato1 || '',
+        dato2: dayData.paso1.dato2 || '',
+        total: dayData.paso1.total || 0,
+        acumuladoAnterior: dayData.paso1.acumuladoAnterior || 0,
+        acumulado: dayData.paso1.acumulado || 0
+      },
+      paso2: {
+        dato1: dayData.paso2.dato1 || '',
+        dato2: dayData.paso2.dato2 || '',
+        total: dayData.paso2.total || 0,
+        acumuladoAnterior: dayData.paso2.acumuladoAnterior || 0,
+        acumulado: dayData.paso2.acumulado || 0
+      },
+      porcentaje: dayData.porcentaje || 0
+    });
+    
+    setIsDayCompleted(true);
+    setCompletedSteps({ paso1: true, paso2: true });
+    setCurrentView('resumen');
+  }
+}, [historicalData, currentDate, loading]);
+
+  // 🆕 Función para verificar si el día actual ya fue guardado
+const checkIfTodayIsCompleted = async () => {
+  try {
+    console.log('🔄 Verificando si el día actual está completado...', currentDate);
+    
+    // Verificar primero en historicalData que ya se cargó
+    if (historicalData && historicalData[currentDate]) {
+      console.log('✅ Día actual encontrado en historicalData en memoria');
+      const data = historicalData[currentDate];
+      
+      // 🆕 CORRECCIÓN CRÍTICA: Cargar TODOS los datos en todayData
+      setTodayData({
+        date: currentDate,
+        paso1: {
+          dato1: data.paso1.dato1 || '',
+          dato2: data.paso1.dato2 || '',
+          total: data.paso1.total || 0,
+          acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
+          acumulado: data.paso1.acumulado || 0
+        },
+        paso2: {
+          dato1: data.paso2.dato1 || '',
+          dato2: data.paso2.dato2 || '',
+          total: data.paso2.total || 0,
+          acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
+          acumulado: data.paso2.acumulado || 0
+        },
+        porcentaje: data.porcentaje || 0
+      });
+      
       setIsDayCompleted(true);
       setCompletedSteps({ paso1: true, paso2: true });
       setCurrentView('resumen');
-    }
-  }, [historicalData, currentDate, loading]);
-
-  // 🆕 Función para verificar si el día actual ya fue guardado
-  const checkIfTodayIsCompleted = async () => {
-    try {
-      console.log('🔄 Verificando si el día actual está completado...', currentDate);
       
-      // Verificar primero en historicalData que ya se cargó
-      if (historicalData && historicalData[currentDate]) {
-        console.log('✅ Día actual encontrado en historicalData en memoria');
-        const data = historicalData[currentDate];
-        
-        setIsDayCompleted(true);
-        setTodayData(data);
-        setCompletedSteps({ paso1: true, paso2: true });
-        setCurrentView('resumen');
-        
-        return true;
-      }
+      return true;
+    }
 
-      // Si no está en memoria, verificar en Firebase
-      if (user) {
-        try {
-          const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
-          const docSnap = await getDoc(docRef);
+    // Si no está en memoria, verificar en Firebase
+    if (user) {
+      try {
+        const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          console.log('✅ Día actual encontrado en Firebase');
+          const data = docSnap.data();
           
-          if (docSnap.exists()) {
-            console.log('✅ Día actual encontrado en Firebase');
-            const data = docSnap.data();
-            
-            // Actualizar historicalData en memoria
-            setHistoricalData(prev => ({
-              ...prev,
-              [currentDate]: data
-            }));
-            
-            setIsDayCompleted(true);
-            setTodayData(data);
-            setCompletedSteps({ paso1: true, paso2: true });
-            setCurrentView('resumen');
-            
-            return true;
-          }
-        } catch (firebaseError) {
-          console.log('ℹ️ Error al conectar con Firebase para verificar día actual');
+          // Actualizar historicalData en memoria
+          setHistoricalData(prev => ({
+            ...prev,
+            [currentDate]: data
+          }));
+          
+          // 🆕 CORRECCIÓN CRÍTICA: Cargar TODOS los datos en todayData
+          setTodayData({
+            date: currentDate,
+            paso1: {
+              dato1: data.paso1.dato1 || '',
+              dato2: data.paso1.dato2 || '',
+              total: data.paso1.total || 0,
+              acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
+              acumulado: data.paso1.acumulado || 0
+            },
+            paso2: {
+              dato1: data.paso2.dato1 || '',
+              dato2: data.paso2.dato2 || '',
+              total: data.paso2.total || 0,
+              acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
+              acumulado: data.paso2.acumulado || 0
+            },
+            porcentaje: data.porcentaje || 0
+          });
+          
+          setIsDayCompleted(true);
+          setCompletedSteps({ paso1: true, paso2: true });
+          setCurrentView('resumen');
+          
+          return true;
         }
+      } catch (firebaseError) {
+        console.log('ℹ️ Error al conectar con Firebase para verificar día actual');
       }
-
-      console.log('ℹ️ Día actual NO encontrado - listo para registrar');
-      setIsDayCompleted(false);
-      
-      // Cargar datos del día anterior del MISMO MES
-      loadPreviousDayData();
-      
-      return false;
-    } catch (error) {
-      console.error('Error verificando día actual:', error);
-      setIsDayCompleted(false);
-      
-      // Intentar cargar datos del día anterior
-      loadPreviousDayData();
-      
-      return false;
     }
-  };
+
+    console.log('ℹ️ Día actual NO encontrado - listo para registrar');
+    setIsDayCompleted(false);
+    
+    // Cargar datos del día anterior del MISMO MES
+    loadPreviousDayData();
+    
+    return false;
+  } catch (error) {
+    console.error('Error verificando día actual:', error);
+    setIsDayCompleted(false);
+    
+    // Intentar cargar datos del día anterior
+    loadPreviousDayData();
+    
+    return false;
+  }
+};
 
   // Cargar datos iniciales CON FIREBASE
   useEffect(() => {
@@ -557,73 +616,57 @@ const App = () => {
   };
 
   // Cargar datos del día anterior - SOLO DEL MISMO MES
-  // Cargar datos del día anterior - SOLO DEL MISMO MES
+// Cargar datos del día anterior - VERSIÓN CORREGIDA
 const loadPreviousDayData = () => {
   try {
     console.log('🔄 Cargando datos del día anterior del mes actual...');
     
-    // Buscar el último día con datos del MISMO MES
-    const currentMonthDays = Object.entries(historicalData)
-      .filter(([date]) => date.startsWith(currentMonth))
+    // Buscar el último día con datos del MISMO MES (excluyendo hoy)
+    const diasDelMes = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
       .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)); // Orden descendente
     
-    console.log('Días del mes actual en histórico:', currentMonthDays);
+    console.log('Días disponibles del mes actual:', diasDelMes.map(([date]) => date));
     
-    if (currentMonthDays.length > 0) {
-      // Tomar el día más reciente del mes actual (excluyendo hoy si existe)
-      const lastMonthDay = currentMonthDays.find(([date]) => date < currentDate);
+    if (diasDelMes.length > 0) {
+      const ultimoDia = diasDelMes[0][1];
+      console.log('📅 Último día del mes con datos:', diasDelMes[0][0]);
       
-      if (lastMonthDay) {
-        console.log('📅 Último día del mes actual con datos:', lastMonthDay[0]);
-        const prevData = lastMonthDay[1];
-        
-        console.log('📊 Datos del día anterior:', {
-          fecha: lastMonthDay[0],
-          acumuladoPaso1: prevData.paso1.acumulado,
-          acumuladoPaso2: prevData.paso2.acumulado,
-          totalPaso1: prevData.paso1.total,
-          totalPaso2: prevData.paso2.total
-        });
-        
-        setTodayData(prev => ({
-          ...prev,
-          date: currentDate,
-          paso1: {
-            dato1: '',
-            dato2: '',
-            total: 0,
-            acumuladoAnterior: prevData.paso1.acumulado,  // ¡ACUMULADO, no total!
-            acumulado: prevData.paso1.acumulado  // Mismo que acumuladoAnterior
-          },
-          paso2: {
-            dato1: '',
-            dato2: '',
-            total: 0,
-            acumuladoAnterior: prevData.paso2.acumulado,  // ¡ACUMULADO, no total!
-            acumulado: prevData.paso2.acumulado  // Mismo que acumuladoAnterior
-          },
-          porcentaje: 0
-        }));
-        
-        console.log('✅ Acumulados cargados desde día anterior del mes:', lastMonthDay[0]);
-        return;
-      }
+      // Cargar acumulados CORRECTAMENTE
+      setTodayData(prev => ({
+        ...prev,
+        date: currentDate,
+        paso1: {
+          dato1: '',
+          dato2: '',
+          total: 0,
+          acumuladoAnterior: ultimoDia.paso1.acumulado || 0,
+          acumulado: ultimoDia.paso1.acumulado || 0
+        },
+        paso2: {
+          dato1: '',
+          dato2: '',
+          total: 0,
+          acumuladoAnterior: ultimoDia.paso2.acumulado || 0,
+          acumulado: ultimoDia.paso2.acumulado || 0
+        },
+        porcentaje: 0
+      }));
+      
+      console.log('✅ Acumulados cargados correctamente desde:', diasDelMes[0][0]);
+    } else {
+      console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
+      setTodayData(prev => ({
+        ...prev,
+        date: currentDate,
+        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        porcentaje: 0
+      }));
     }
-    
-    // No hay día anterior en el mismo mes, empezar desde cero
-    console.log('ℹ️ No hay datos anteriores en el mes actual, empezando desde cero');
-    setTodayData(prev => ({
-      ...prev,
-      date: currentDate,
-      paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-      paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-      porcentaje: 0
-    }));
 
   } catch (error) {
-    console.error('Error loading previous day data:', error);
-    
-    // En caso de error, empezar desde cero
+    console.error('Error cargando datos del día anterior:', error);
     setTodayData(prev => ({
       ...prev,
       date: currentDate,
@@ -633,6 +676,97 @@ const loadPreviousDayData = () => {
     }));
   }
 };
+
+  // 🆕 Función para corregir acumulados de días con errores
+const corregirAcumuladosErroneos = () => {
+  const diasCorregidos = [];
+  
+  // Obtener todos los días del mes actual ordenados
+  const diasDelMes = Object.entries(historicalData)
+    .filter(([date]) => date.startsWith(currentMonth))
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB)); // Orden ascendente
+  
+  if (diasDelMes.length <= 1) return diasCorregidos;
+  
+  let acumuladoCorrectoPaso1 = 0;
+  let acumuladoCorrectoPaso2 = 0;
+  
+  // Recalcular acumulados día por día
+  for (let i = 0; i < diasDelMes.length; i++) {
+    const [fecha, datos] = diasDelMes[i];
+    
+    // El acumulado anterior debe ser el acumulado del día anterior (si existe)
+    const acumuladoAnteriorCorrectoPaso1 = i > 0 ? diasDelMes[i-1][1].paso1.acumulado : 0;
+    const acumuladoAnteriorCorrectoPaso2 = i > 0 ? diasDelMes[i-1][1].paso2.acumulado : 0;
+    
+    // Calcular acumulado correcto
+    const acumuladoCorrectoPaso1 = acumuladoAnteriorCorrectoPaso1 + datos.paso1.total;
+    const acumuladoCorrectoPaso2 = acumuladoAnteriorCorrectoPaso2 + datos.paso2.total;
+    
+    // Verificar si hay discrepancias
+    if (datos.paso1.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso1 || 
+        datos.paso1.acumulado !== acumuladoCorrectoPaso1 ||
+        datos.paso2.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso2 || 
+        datos.paso2.acumulado !== acumuladoCorrectoPaso2) {
+      
+      // Crear versión corregida
+      const datosCorregidos = {
+        ...datos,
+        paso1: {
+          ...datos.paso1,
+          acumuladoAnterior: acumuladoAnteriorCorrectoPaso1,
+          acumulado: acumuladoCorrectoPaso1
+        },
+        paso2: {
+          ...datos.paso2,
+          acumuladoAnterior: acumuladoAnteriorCorrectoPaso2,
+          acumulado: acumuladoCorrectoPaso2
+        }
+      };
+      
+      // Recalcular porcentaje
+      if (acumuladoCorrectoPaso1 > 0 && acumuladoCorrectoPaso2 > 0) {
+        const menor = Math.min(acumuladoCorrectoPaso1, acumuladoCorrectoPaso2);
+        const mayor = Math.max(acumuladoCorrectoPaso1, acumuladoCorrectoPaso2);
+        datosCorregidos.porcentaje = (menor / mayor) * 100;
+      }
+      
+      // Actualizar historicalData
+      setHistoricalData(prev => ({
+        ...prev,
+        [fecha]: datosCorregidos
+      }));
+      
+      // Guardar en Firebase
+      if (user) {
+        saveToFirebase('historicalData', fecha, datosCorregidos);
+      }
+      
+      diasCorregidos.push(fecha);
+      console.log(`✅ Día ${fecha} corregido`);
+    }
+  }
+  
+  if (diasCorregidos.length > 0) {
+    console.log(`📊 Días corregidos: ${diasCorregidos.join(', ')}`);
+  }
+  
+  return diasCorregidos;
+};
+
+// Ejecutar corrección cuando se cargan los datos
+useEffect(() => {
+  if (!loading && Object.keys(historicalData).length > 0) {
+    const diasCorregidos = corregirAcumuladosErroneos();
+    if (diasCorregidos.length > 0 && diasCorregidos.includes(currentDate)) {
+      // Si se corrigió el día actual, actualizar todayData
+      const datosActualizados = historicalData[currentDate];
+      if (datosActualizados) {
+        setTodayData(datosActualizados);
+      }
+    }
+  }
+}, [loading, historicalData, currentDate, user]);
 
   // Función para formatear números como moneda
   const formatCurrency = (value) => {
@@ -737,57 +871,113 @@ const loadPreviousDayData = () => {
     }
   }, [todayData.paso1.acumulado, todayData.paso2.acumulado]);
 
-  // Guardar datos del día - VERSIÓN MEJORADA
-  const saveData = async () => {
-    try {
-      console.log('💾 Guardando datos para el día:', todayData.date);
+  // Guardar datos del día - 
+const saveData = async () => {
+  try {
+    console.log('💾 Guardando datos para el día:', currentDate);
+    
+    // 🆕 Mostrar advertencia si es último día del mes
+    if (isLastDayOfMonth) {
+      const confirmSave = window.confirm(
+        '📅 ¡ÚLTIMO DÍA DEL MES!\n\n' +
+        'Estás a punto de guardar datos del último día del mes.\n\n' +
+        '✅ Puedes registrar datos normalmente\n' +
+        '⚠️ Mañana comenzará un nuevo mes\n' +
+        '📊 El resumen del mes estará disponible para exportar manualmente\n\n' +
+        '¿Continuar con el guardado?'
+      );
       
-      // 🆕 Mostrar advertencia si es último día del mes
-      if (isLastDayOfMonth) {
-        const confirmSave = window.confirm(
-          '📅 ¡ÚLTIMO DÍA DEL MES!\n\n' +
-          'Estás a punto de guardar datos del último día del mes.\n\n' +
-          '✅ Puedes registrar datos normalmente\n' +
-          '⚠️ Mañana comenzará un nuevo mes\n' +
-          '📊 El resumen del mes estará disponible para exportar manualmente\n\n' +
-          '¿Continuar con el guardado?'
-        );
-        
-        if (!confirmSave) {
-          return;
-        }
+      if (!confirmSave) {
+        return;
       }
-      
-      const newHistoricalData = {
-        ...historicalData,
-        [todayData.date]: { ...todayData }
-      };
-      
-      // Actualizar el estado historicalData inmediatamente
-      setHistoricalData(newHistoricalData);
-      
-      // Guardar en Firebase (si hay conexión)
-      if (user) {
-        const firebaseSuccess = await saveToFirebase('historicalData', todayData.date, todayData);
-        if (firebaseSuccess) {
-          setCloudStatus('💾 Guardado en la nube');
-        } else {
-          setCloudStatus('💾 Guardado localmente');
-        }
-      }
-      
-      // 🆕 Marcar el día como completado
-      setIsDayCompleted(true);
-      setCompletedSteps({ paso1: true, paso2: true });
-      setCurrentView('resumen');
-
-      alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
-      
-    } catch (error) {
-      console.error('Error saving day data:', error);
-      alert('❌ Error al guardar los datos. Intenta nuevamente.');
     }
-  };
+    
+    // 🆕 CORRECCIÓN CRÍTICA: Buscar el acumulado anterior del ÚLTIMO DÍA registrado del MISMO MES
+    const diasDelMes = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
+      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)); // Orden descendente
+    
+    let acumuladoAnteriorPaso1 = 0;
+    let acumuladoAnteriorPaso2 = 0;
+    
+    if (diasDelMes.length > 0) {
+      // Tomar el día más reciente (último día con datos)
+      const ultimoDia = diasDelMes[0][1];
+      acumuladoAnteriorPaso1 = ultimoDia.paso1.acumulado || 0;
+      acumuladoAnteriorPaso2 = ultimoDia.paso2.acumulado || 0;
+      
+      console.log('📊 Acumulado anterior encontrado del día:', diasDelMes[0][0], {
+        paso1: acumuladoAnteriorPaso1,
+        paso2: acumuladoAnteriorPaso2
+      });
+    } else {
+      console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
+    }
+    
+    // Calcular los nuevos acumulados CORRECTAMENTE
+    const totalDiaPaso1 = parseFloat(todayData.paso1.dato1 || 0) + parseFloat(todayData.paso1.dato2 || 0);
+    const totalDiaPaso2 = parseFloat(todayData.paso2.dato1 || 0) + parseFloat(todayData.paso2.dato2 || 0);
+    
+    const nuevoAcumuladoPaso1 = acumuladoAnteriorPaso1 + totalDiaPaso1;
+    const nuevoAcumuladoPaso2 = acumuladoAnteriorPaso2 + totalDiaPaso2;
+    
+    // Calcular porcentaje
+    let porcentaje = 0;
+    if (nuevoAcumuladoPaso1 > 0 && nuevoAcumuladoPaso2 > 0) {
+      const menor = Math.min(nuevoAcumuladoPaso1, nuevoAcumuladoPaso2);
+      const mayor = Math.max(nuevoAcumuladoPaso1, nuevoAcumuladoPaso2);
+      porcentaje = (menor / mayor) * 100;
+    }
+    
+    // Crear objeto con datos CORREGIDOS
+    const datosDia = {
+      date: currentDate,
+      paso1: {
+        dato1: todayData.paso1.dato1 || '',
+        dato2: todayData.paso1.dato2 || '',
+        total: totalDiaPaso1,
+        acumuladoAnterior: acumuladoAnteriorPaso1, // ← ¡CORREGIDO!
+        acumulado: nuevoAcumuladoPaso1 // ← ¡CORREGIDO!
+      },
+      paso2: {
+        dato1: todayData.paso2.dato1 || '',
+        dato2: todayData.paso2.dato2 || '',
+        total: totalDiaPaso2,
+        acumuladoAnterior: acumuladoAnteriorPaso2, // ← ¡CORREGIDO!
+        acumulado: nuevoAcumuladoPaso2 // ← ¡CORREGIDO!
+      },
+      porcentaje: porcentaje
+    };
+    
+    console.log('💾 Guardando datos CORREGIDOS:', datosDia);
+    
+    // Actualizar historicalData
+    const nuevosHistoricalData = {
+      ...historicalData,
+      [currentDate]: datosDia
+    };
+    
+    setHistoricalData(nuevosHistoricalData);
+    setTodayData(datosDia);
+    
+    // Guardar en Firebase
+    if (user) {
+      const exito = await saveToFirebase('historicalData', currentDate, datosDia);
+      setCloudStatus(exito ? '💾 Guardado en la nube' : '💾 Guardado localmente');
+    }
+    
+    // Marcar como completado
+    setIsDayCompleted(true);
+    setCompletedSteps({ paso1: true, paso2: true });
+    setCurrentView('resumen');
+
+    alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
+    
+  } catch (error) {
+    console.error('Error al guardar datos:', error);
+    alert('❌ Error al guardar los datos. Intenta nuevamente.');
+  }
+};
 
   // Iniciar edición
   const startEditing = (date) => {
@@ -917,8 +1107,27 @@ const loadPreviousDayData = () => {
           // Cargar los datos del día actual
           const todayImportedData = newHistoricalData[currentDate];
           
+          // Asegurarse de que todos los campos estén presentes
+          const completeDayData = {
+            ...todayImportedData,
+            paso1: {
+              dato1: todayImportedData.paso1.dato1 || '',
+              dato2: todayImportedData.paso1.dato2 || '',
+              total: todayImportedData.paso1.total || 0,
+              acumuladoAnterior: todayImportedData.paso1.acumuladoAnterior || 0,
+              acumulado: todayImportedData.paso1.acumulado || 0
+            },
+            paso2: {
+              dato1: todayImportedData.paso2.dato1 || '',
+              dato2: todayImportedData.paso2.dato2 || '',
+              total: todayImportedData.paso2.total || 0,
+              acumuladoAnterior: todayImportedData.paso2.acumuladoAnterior || 0,
+              acumulado: todayImportedData.paso2.acumulado || 0
+            }
+          };
+          
           // ACTUALIZAR EL ESTADO todayData CON LOS DATOS IMPORTADOS
-          setTodayData(todayImportedData);
+          setTodayData(completeDayData);
           
           // Marcar como día completado
           setIsDayCompleted(true);
@@ -1693,39 +1902,67 @@ const loadPreviousDayData = () => {
         {/* Contenido */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           {currentView === 'paso1' && (
-            <div>
-              <h2 className="text-2xl font-bold text-blue-900 mb-6">Paso 1</h2>
-              
-              {/* 🆕 Mensaje si el día ya está completado */}
-              {isDayCompleted && (
-                <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
-                  <p className="text-blue-800 font-semibold">
-                    ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
-                  </p>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Podrás registrar nuevos datos mañana o editar este día desde el historial.
+  <div>
+    <h2 className="text-2xl font-bold text-blue-900 mb-6">Paso 1</h2>
+    
+    {/* 🆕 Mensaje si el día ya está completado */}
+    {isDayCompleted && (
+      <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
+        <p className="text-blue-800 font-semibold">
+          ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
+        </p>
+        <p className="text-sm text-blue-700 mt-1">
+          Podrás registrar nuevos datos mañana o editar este día desde el historial.
+        </p>
+      </div>
+    )}
+    
+    {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
+        <p className="text-sm text-yellow-800">
+          📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
+        </p>
+      </div>
+    )}
+    
+    <div className="space-y-4">
+      {/* SIEMPRE mostrar datos REALES - usar historicalData cuando isDayCompleted = true */}
+            {isDayCompleted ? (
+              <div className="space-y-3">
+                <div className="bg-white p-4 rounded-lg border border-blue-200">
+                  <p className="text-gray-700 font-semibold mb-1">Dato 1:</p>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {formatCurrency(historicalData[currentDate]?.paso1?.dato1 || todayData.paso1.dato1 || '0')}
                   </p>
                 </div>
-              )}
-              
-              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
-                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
-                  <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
+                
+                <div className="bg-white p-4 rounded-lg border border-blue-200">
+                  <p className="text-gray-700 font-semibold mb-1">Dato 2:</p>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {formatCurrency(historicalData[currentDate]?.paso1?.dato2 || todayData.paso1.dato2 || '0')}
                   </p>
                 </div>
-              )}
-              
-              <div className="space-y-4">
+                
+                <div className="bg-blue-50 p-4 rounded-lg space-y-1">
+                  <p className="text-gray-700 font-semibold">Acumulado anterior: {formatCurrency(historicalData[currentDate]?.paso1?.acumuladoAnterior || todayData.paso1.acumuladoAnterior || 0)}</p>
+                  <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(historicalData[currentDate]?.paso1?.total || todayData.paso1.total || 0)}</p>
+                  <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
+                    Acumulado del mes: {formatCurrency(historicalData[currentDate]?.paso1?.acumulado || todayData.paso1.acumulado || 0)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* MOSTRAR INPUTS NORMALES CUANDO NO ESTÁ COMPLETADO */
+              <>
                 <div>
                   <label className="block text-gray-700 font-semibold mb-2">Dato 1</label>
                   <input
                     type="text"
                     value={formatCurrency(todayData.paso1.dato1)}
                     onChange={(e) => handleInputChange('paso1', 'dato1', e.target.value)}
-                    disabled={completedSteps.paso1 || isDayCompleted}
+                    disabled={completedSteps.paso1}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso1 || isDayCompleted
+                      completedSteps.paso1
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-blue-300 focus:border-blue-500 focus:outline-none'
                     }`}
@@ -1739,9 +1976,9 @@ const loadPreviousDayData = () => {
                     type="text"
                     value={formatCurrency(todayData.paso1.dato2)}
                     onChange={(e) => handleInputChange('paso1', 'dato2', e.target.value)}
-                    disabled={completedSteps.paso1 || isDayCompleted}
+                    disabled={completedSteps.paso1}
                     className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso1 || isDayCompleted
+                      completedSteps.paso1
                         ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
                         : 'border-blue-300 focus:border-blue-500 focus:outline-none'
                     }`}
@@ -1755,177 +1992,241 @@ const loadPreviousDayData = () => {
                     Acumulado del mes: {formatCurrency(todayData.paso1.acumulado)}
                   </p>
                 </div>
+              </>
+            )}
 
-                {!completedSteps.paso1 && !isDayCompleted && (
-                  <button
-                    onClick={continuarPaso1}
-                    disabled={todayData.paso1.dato1 === '' || todayData.paso1.dato2 === ''}
-                    className={`w-full py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
-                      todayData.paso1.dato1 === '' || todayData.paso1.dato2 === ''
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-500 text-white hover:bg-blue-600'
-                    }`}
-                  >
-                    <span>Siguiente: Paso 2</span>
-                    <ChevronRight size={20} />
-                  </button>
-                )}
-                
-                {(completedSteps.paso1 || isDayCompleted) && (
-                  <div className="bg-blue-100 p-3 rounded-lg text-center text-blue-800 font-semibold">
-                    ✓ Paso completado - Solo lectura
-                  </div>
-                )}
+            {!completedSteps.paso1 && !isDayCompleted && (
+              <button
+                onClick={continuarPaso1}
+                disabled={todayData.paso1.dato1 === '' || todayData.paso1.dato2 === ''}
+                className={`w-full py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
+                  todayData.paso1.dato1 === '' || todayData.paso1.dato2 === ''
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
+              >
+                <span>Siguiente: Paso 2</span>
+                <ChevronRight size={20} />
+              </button>
+            )}
+            
+            {(completedSteps.paso1 || isDayCompleted) && (
+              <div className="bg-blue-100 p-3 rounded-lg text-center text-blue-800 font-semibold">
+                ✓ Paso completado - Solo lectura
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
+      )}
 
           {currentView === 'paso2' && (
-            <div>
-              <h2 className="text-2xl font-bold text-green-900 mb-6">Paso 2</h2>
+  <div>
+    <h2 className="text-2xl font-bold text-green-900 mb-6">Paso 2</h2>
 
-              {/* 🆕 Mensaje si el día ya está completado */}
-              {isDayCompleted && (
-                <div className="bg-green-100 border-l-4 border-green-500 p-4 mb-4">
-                  <p className="text-green-800 font-semibold">
-                    ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
-                  </p>
-                  <p className="text-sm text-green-700 mt-1">
-                    Podrás registrar nuevos datos mañana o editar este día desde el historial.
-                  </p>
-                </div>
-              )}
+    {/* 🆕 Mensaje si el día ya está completado */}
+    {isDayCompleted && (
+      <div className="bg-green-100 border-l-4 border-green-500 p-4 mb-4">
+        <p className="text-green-800 font-semibold">
+          ℹ️ Este día ya fue registrado. Los datos están en modo solo lectura.
+        </p>
+        <p className="text-sm text-green-700 mt-1">
+          Podrás registrar nuevos datos mañana o editar este día desde el historial.
+        </p>
+      </div>
+    )}
 
-              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
-                <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
-                  <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
-                  </p>
-                </div>
-              )}
+    {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
+        <p className="text-sm text-yellow-800">
+          📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
+        </p>
+      </div>
+    )}
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-2">Dato 1</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(todayData.paso2.dato1)}
-                    onChange={(e) => handleInputChange('paso2', 'dato1', e.target.value)}
-                    disabled={completedSteps.paso2 || isDayCompleted}
-                    className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso2 || isDayCompleted
-                        ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
-                        : 'border-green-300 focus:border-green-500 focus:outline-none'
-                    }`}
-                    placeholder="$0"
-                  />
-                </div>
+    <div className="space-y-4">
+      {/* SIEMPRE mostrar datos REALES - usar historicalData cuando isDayCompleted = true */}
+      {isDayCompleted ? (
+        <div className="space-y-3">
+          <div className="bg-white p-4 rounded-lg border border-green-200">
+            <p className="text-gray-700 font-semibold mb-1">Dato 1:</p>
+            <p className="text-2xl font-bold text-green-900">
+              {formatCurrency(historicalData[currentDate]?.paso2?.dato1 || todayData.paso2.dato1 || '0')}
+            </p>
+          </div>
+          
+          <div className="bg-white p-4 rounded-lg border border-green-200">
+            <p className="text-gray-700 font-semibold mb-1">Dato 2:</p>
+            <p className="text-2xl font-bold text-green-900">
+              {formatCurrency(historicalData[currentDate]?.paso2?.dato2 || todayData.paso2.dato2 || '0')}
+            </p>
+          </div>
+          
+          <div className="bg-green-50 p-4 rounded-lg space-y-1">
+            <p className="text-gray-700 font-semibold">Acumulado anterior: {formatCurrency(historicalData[currentDate]?.paso2?.acumuladoAnterior || todayData.paso2.acumuladoAnterior || 0)}</p>
+            <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(historicalData[currentDate]?.paso2?.total || todayData.paso2.total || 0)}</p>
+            <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
+              Acumulado del mes: {formatCurrency(historicalData[currentDate]?.paso2?.acumulado || todayData.paso2.acumulado || 0)}
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* MOSTRAR INPUTS NORMALES CUANDO NO ESTÁ COMPLETADO */
+        <>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-2">Dato 1</label>
+            <input
+              type="text"
+              value={formatCurrency(todayData.paso2.dato1)}
+              onChange={(e) => handleInputChange('paso2', 'dato1', e.target.value)}
+              disabled={completedSteps.paso2}
+              className={`w-full p-3 border-2 rounded-lg text-lg ${
+                completedSteps.paso2
+                  ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
+                  : 'border-green-300 focus:border-green-500 focus:outline-none'
+              }`}
+              placeholder="$0"
+            />
+          </div>
 
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-2">Dato 2</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(todayData.paso2.dato2)}
-                    onChange={(e) => handleInputChange('paso2', 'dato2', e.target.value)}
-                    disabled={completedSteps.paso2 || isDayCompleted}
-                    className={`w-full p-3 border-2 rounded-lg text-lg ${
-                      completedSteps.paso2 || isDayCompleted
-                        ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
-                        : 'border-green-300 focus:border-green-500 focus:outline-none'
-                    }`}
-                    placeholder="$0"
-                  />
-                </div>
+          <div>
+            <label className="block text-gray-700 font-semibold mb-2">Dato 2</label>
+            <input
+              type="text"
+              value={formatCurrency(todayData.paso2.dato2)}
+              onChange={(e) => handleInputChange('paso2', 'dato2', e.target.value)}
+              disabled={completedSteps.paso2}
+              className={`w-full p-3 border-2 rounded-lg text-lg ${
+                completedSteps.paso2
+                  ? 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed'
+                  : 'border-green-300 focus:border-green-500 focus:outline-none'
+              }`}
+              placeholder="$0"
+            />
+          </div>
 
-                <div className="bg-green-50 p-4 rounded-lg space-y-1">
-                  <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso2.total)}</p>
-                  <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
-                    Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
-                  </p>
-                </div>
+          <div className="bg-green-50 p-4 rounded-lg space-y-1">
+            <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso2.total)}</p>
+            <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
+              Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
+            </p>
+          </div>
+        </>
+      )}
 
-                {!completedSteps.paso2 && !isDayCompleted && (
-                  <button
-                    onClick={continuarPaso2}
-                    disabled={todayData.paso2.dato1 === '' || todayData.paso2.dato2 === ''}
-                    className={`w-full py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
-                      todayData.paso2.dato1 === '' || todayData.paso2.dato2 === ''
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-500 text-white hover:bg-green-600'
-                    }`}
-                  >
-                    <span>Ver Resumen</span>
-                    <ChevronRight size={20} />
-                  </button>
-                )}
-                
-                {(completedSteps.paso2 || isDayCompleted) && (
-                  <div className="bg-green-100 p-3 rounded-lg text-center text-green-800 font-semibold">
-                    ✓ Paso completado - Solo lectura
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
+      {!completedSteps.paso2 && !isDayCompleted && (
+        <button
+          onClick={continuarPaso2}
+          disabled={todayData.paso2.dato1 === '' || todayData.paso2.dato2 === ''}
+          className={`w-full py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
+            todayData.paso2.dato1 === '' || todayData.paso2.dato2 === ''
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-green-500 text-white hover:bg-green-600'
+          }`}
+        >
+          <span>Ver Resumen</span>
+          <ChevronRight size={20} />
+        </button>
+      )}
+      
+      {(completedSteps.paso2 || isDayCompleted) && (
+        <div className="bg-green-100 p-3 rounded-lg text-center text-green-800 font-semibold">
+          ✓ Paso completado - Solo lectura
+        </div>
+      )}
+    </div>
+  </div>
+)}
           {currentView === 'resumen' && (
-            <div>
-              <h2 className="text-2xl font-bold text-purple-900 mb-6">Resumen del Día</h2>
-              
-              {/* 🆕 Mensaje si el día ya está completado */}
-              {isDayCompleted && (
-                <div className="bg-purple-100 border-l-4 border-purple-500 p-4 mb-4">
-                  <p className="text-purple-800 font-semibold">
-                    ✅ Este día ya fue guardado exitosamente.
-                  </p>
-                  <p className="text-sm text-purple-700 mt-1">
-                    Los datos están sincronizados con la nube. Podrás registrar el siguiente día mañana.
-                  </p>
-                </div>
-              )}
-              
-              <div className="space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h3 className="font-bold text-blue-900 mb-3 text-lg">Paso 1</h3>
-                  <p className="text-gray-700">Total del día: <span className="font-bold">{formatCurrency(todayData.paso1.total)}</span></p>
-                  <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
-                    Acumulado del mes: {formatCurrency(todayData.paso1.acumulado)}
-                  </p>
-                </div>
-
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <h3 className="font-bold text-green-900 mb-3 text-lg">Paso 2</h3>
-                  <p className="text-gray-700">Total del día: <span className="font-bold">{formatCurrency(todayData.paso2.total)}</span></p>
-                  <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
-                    Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
-                  </p>
-                </div>
-
-                {/* 🆕 Total del día (suma de ambos pasos del día) */}
-                <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
-                  <h3 className="font-bold text-purple-900 text-lg mb-3">Total del Día</h3>
-                  <p className="font-bold text-3xl text-purple-900">
-                    {formatCurrency(todayData.paso1.total + todayData.paso2.total)}
-                  </p>
-                  <div className="border-t-2 border-purple-300 pt-3 mt-3">
-                    <p className="font-bold text-purple-900 text-2xl">
-                      Porcentaje: {todayData.porcentaje.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-
-                {!isDayCompleted && (
-                  <button
-                    onClick={saveData}
-                    className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
-                  >
-                    <Save size={20} />
-                    <span>Guardar Datos del Día</span>
-                  </button>
-                )}
-              </div>
-            </div>
+  <div>
+    <h2 className="text-2xl font-bold text-purple-900 mb-6">Resumen del Día</h2>
+    
+    {/* 🆕 Mensaje si el día ya está completado */}
+    {isDayCompleted && (
+      <div className="bg-purple-100 border-l-4 border-purple-500 p-4 mb-4">
+        <p className="text-purple-800 font-semibold">
+          ✅ Este día ya fue guardado exitosamente.
+        </p>
+        <p className="text-sm text-purple-700 mt-1">
+          Los datos están sincronizados con la nube. Podrás registrar el siguiente día mañana.
+        </p>
+      </div>
+    )}
+    
+    <div className="space-y-4">
+      <div className="bg-blue-50 p-4 rounded-lg">
+        <h3 className="font-bold text-blue-900 mb-3 text-lg">Paso 1</h3>
+        <p className="text-gray-700">
+          Total del día: <span className="font-bold">
+            {formatCurrency(
+              isDayCompleted && historicalData[currentDate] 
+                ? historicalData[currentDate].paso1.total 
+                : todayData.paso1.total || 0
+            )}
+          </span>
+        </p>
+        <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
+          Acumulado del mes: {formatCurrency(
+            isDayCompleted && historicalData[currentDate] 
+              ? historicalData[currentDate].paso1.acumulado 
+              : todayData.paso1.acumulado || 0
           )}
+        </p>
+      </div>
+
+      <div className="bg-green-50 p-4 rounded-lg">
+        <h3 className="font-bold text-green-900 mb-3 text-lg">Paso 2</h3>
+        <p className="text-gray-700">
+          Total del día: <span className="font-bold">
+            {formatCurrency(
+              isDayCompleted && historicalData[currentDate] 
+                ? historicalData[currentDate].paso2.total 
+                : todayData.paso2.total || 0
+            )}
+          </span>
+        </p>
+        <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
+          Acumulado del mes: {formatCurrency(
+            isDayCompleted && historicalData[currentDate] 
+              ? historicalData[currentDate].paso2.acumulado 
+              : todayData.paso2.acumulado || 0
+          )}
+        </p>
+      </div>
+
+      {/* 🆕 Total del día (suma de ambos pasos del día) */}
+      <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
+        <h3 className="font-bold text-purple-900 text-lg mb-3">Total del Día</h3>
+        <p className="font-bold text-3xl text-purple-900">
+          {formatCurrency(
+            (isDayCompleted && historicalData[currentDate] 
+              ? (historicalData[currentDate].paso1.total || 0) + (historicalData[currentDate].paso2.total || 0)
+              : (todayData.paso1.total || 0) + (todayData.paso2.total || 0)
+            )
+          )}
+        </p>
+        <div className="border-t-2 border-purple-300 pt-3 mt-3">
+          <p className="font-bold text-purple-900 text-2xl">
+            Porcentaje: {(
+              isDayCompleted && historicalData[currentDate] 
+                ? historicalData[currentDate].porcentaje 
+                : todayData.porcentaje || 0
+            ).toFixed(2)}%
+          </p>
+        </div>
+      </div>
+
+      {!isDayCompleted && (
+        <button
+          onClick={saveData}
+          className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+        >
+          <Save size={20} />
+          <span>Guardar Datos del Día</span>
+        </button>
+      )}
+    </div>
+  </div>
+)}
         </div>
 
         {/* Footer */}
