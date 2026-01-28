@@ -23,6 +23,12 @@ const App = () => {
   // 🆕 Estado para saber si el día actual ya fue guardado
   const [isDayCompleted, setIsDayCompleted] = useState(false);
   
+  // 🆕 Estado para controlar el mes actual
+  const [currentMonth, setCurrentMonth] = useState(currentDate.slice(0, 7)); // "YYYY-MM"
+  
+  // 🆕 Estado para último día del mes
+  const [isLastDayOfMonth, setIsLastDayOfMonth] = useState(false);
+  
   // Estado para datos del día actual
   const [todayData, setTodayData] = useState({
     date: currentDate,
@@ -43,18 +49,68 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
 
-  // ===================== FUNCIÓN NUEVA: RESETEAR SISTEMA =====================
-  const resetSystem = async () => {
-    // Mostrar confirmación
+  // ===================== DETECCIÓN DE CAMBIO DE MES =====================
+  useEffect(() => {
+    const checkMonthAndLastDay = () => {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth() + 1;
+      
+      // Verificar si es último día del mes
+      const lastDayOfMonth = new Date(year, month, 0).getDate();
+      const isLastDay = today.getDate() === lastDayOfMonth;
+      setIsLastDayOfMonth(isLastDay);
+      
+      // Verificar cambio de mes
+      const newMonth = `${year}-${month.toString().padStart(2, '0')}`;
+      
+      if (newMonth !== currentMonth) {
+        console.log(`🔄 ¡Cambió el mes! De ${currentMonth} a ${newMonth}`);
+        
+        // Actualizar el mes actual
+        setCurrentMonth(newMonth);
+        
+        // Resetear acumulados para el nuevo mes
+        setTodayData(prev => ({
+          ...prev,
+          date: currentDate,
+          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+          porcentaje: 0
+        }));
+        
+        setIsDayCompleted(false);
+        setCompletedSteps({ paso1: false, paso2: false });
+        setCurrentView('paso1');
+        
+        // Mostrar mensaje informativo
+        alert(`📅 ¡Nuevo mes comenzado! (${newMonth})\n\nLos acumulados se han reiniciado a CERO.\nPuedes comenzar a registrar datos del nuevo mes.\n\n💡 El mes anterior (${currentMonth}) sigue disponible para exportar manualmente desde el historial.`);
+      }
+    };
+    
+    // Ejecutar al cargar y cada minuto para detectar cambios de mes
+    checkMonthAndLastDay();
+    const interval = setInterval(checkMonthAndLastDay, 60000); // Verificar cada minuto
+    
+    return () => clearInterval(interval);
+  }, [currentDate, currentMonth]);
+
+  // ===================== FUNCIÓN MEJORADA: RESETEAR MES ACTUAL =====================
+  const resetCurrentMonth = async () => {
+    // Mostrar confirmación específica para el mes actual
     const confirmReset = window.confirm(
-      '⚠️ ¿ESTÁS SEGURO DE QUE QUIERES REINICIAR EL SISTEMA COMPLETAMENTE?\n\n' +
-      'Esta acción eliminará:\n' +
-      '• Todos los datos históricos diarios\n' +
-      '• Todos los resúmenes mensuales\n' +
-      '\n' +
-      'El sistema comenzará desde CERO y podrás registrar datos\n' +
-      'desde la fecha actual.\n\n' +
-      'Esta acción NO se puede deshacer.\n\n' +
+      `⚠️ ¿REINICIAR MES ${currentMonth}?\n\n` +
+      `Esta acción eliminará SOLO los datos del mes ${currentMonth}:\n` +
+      `• Todos los días registrados en ${currentMonth}\n` +
+      `• Los acumulados actuales de ${currentMonth}\n\n` +
+      '🚫 NO se eliminarán:\n' +
+      '• Meses anteriores (quedan en historial)\n' +
+      '• JSONs de meses completados\n' +
+      '• Resúmenes mensuales anteriores\n\n' +
+      'Después del reinicio:\n' +
+      `• Comenzarás ${currentMonth} desde CERO\n` +
+      '• Podrás registrar nuevos datos normalmente\n' +
+      '• Los meses anteriores seguirán disponibles\n\n' +
       '¿Continuar?'
     );
 
@@ -64,45 +120,55 @@ const App = () => {
 
     try {
       setLoading(true);
-      setCloudStatus('🔄 Reiniciando sistema...');
+      setCloudStatus(`🔄 Reiniciando mes ${currentMonth}...`);
 
-      // 1. Eliminar datos de Firebase si hay usuario conectado
+      // 1. Eliminar SOLO datos del mes actual de Firebase
       if (user) {
         try {
-          // Eliminar datos históricos de Firebase
-          const historicalRef = collection(db, 'users', user.uid, 'historicalData');
-          const historicalSnapshot = await getDocs(historicalRef);
-          for (const docSnap of historicalSnapshot.docs) {
-            await deleteDoc(doc(db, 'users', user.uid, 'historicalData', docSnap.id));
+          // Buscar todos los días del mes actual en los datos históricos
+          const monthDays = Object.keys(historicalData).filter(date => 
+            date.startsWith(currentMonth)
+          );
+          
+          console.log(`🗑️ Eliminando ${monthDays.length} días del mes ${currentMonth} de Firebase`);
+          
+          // Eliminar cada día del mes actual de Firebase
+          for (const date of monthDays) {
+            await deleteFromFirebase('historicalData', date);
           }
-
-          // Eliminar datos mensuales de Firebase
-          const monthlyRef = collection(db, 'users', user.uid, 'monthlyData');
-          const monthlySnapshot = await getDocs(monthlyRef);
-          for (const docSnap of monthlySnapshot.docs) {
-            await deleteDoc(doc(db, 'users', user.uid, 'monthlyData', docSnap.id));
+          
+          console.log(`✅ Datos del mes ${currentMonth} eliminados de Firebase`);
+          
+          // También eliminar resumen mensual de este mes si existe
+          if (monthlyData[currentMonth]) {
+            await deleteFromFirebase('monthlyData', currentMonth);
+            console.log(`✅ Resumen del mes ${currentMonth} eliminado de Firebase`);
           }
-
-          console.log('✅ Datos eliminados de Firebase');
+          
         } catch (firebaseError) {
-          console.warn('⚠️ No se pudieron eliminar datos de Firebase:', firebaseError);
+          console.warn(`⚠️ No se pudieron eliminar datos del mes ${currentMonth}:`, firebaseError);
         }
       }
 
-      // 2. Limpiar localStorage
-      localStorage.removeItem('historicalData');
-      localStorage.removeItem('monthlyData');
-      localStorage.removeItem('currentMonth');
-      console.log('✅ localStorage limpiado');
+      // 2. Filtrar datos históricos - mantener solo meses anteriores
+      const newHistoricalData = {};
+      Object.entries(historicalData).forEach(([date, data]) => {
+        if (!date.startsWith(currentMonth)) {
+          newHistoricalData[date] = data;
+        }
+      });
+      setHistoricalData(newHistoricalData);
 
-      // 3. Resetear TODOS los estados críticos
-      setHistoricalData({});
-      setMonthlyData({});
-      
-      // IMPORTANTE: Resetear el estado del día actual
-      setIsDayCompleted(false);
-      
-      // Resetear datos del día actual desde CERO
+      // 3. Filtrar datos mensuales - mantener solo meses anteriores
+      const newMonthlyData = {};
+      Object.entries(monthlyData).forEach(([month, data]) => {
+        if (month !== currentMonth) {
+          newMonthlyData[month] = data;
+        }
+      });
+      setMonthlyData(newMonthlyData);
+
+      // 4. Resetear datos del día actual desde CERO
       setTodayData({
         date: currentDate,
         paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
@@ -110,58 +176,92 @@ const App = () => {
         porcentaje: 0
       });
       
-      // Resetear pasos completados
+      // 5. Resetear estados del día actual
+      setIsDayCompleted(false);
       setCompletedSteps({ paso1: false, paso2: false });
-      
-      // Regresar al paso 1
       setCurrentView('paso1');
       
-      // Limpiar todas las vistas
+      // 6. Limpiar vistas temporales
       setSelectedDate(null);
-      setShowMonthlyHistory(false);
-      setShowCalendar(false);
       setIsEditing(false);
       setEditData(null);
-      
-      // Resetear calendario al mes actual
-      setCalendarMonth(new Date());
 
-      // 4. Mostrar mensaje de éxito
-      setCloudStatus('✅ Sistema reiniciado - Listo para comenzar');
+      // 7. Mostrar mensaje de éxito
+      setCloudStatus(`✅ Mes ${currentMonth} reiniciado - Listo para comenzar`);
       
-      // Dar instrucciones claras
-      alert('✅ Sistema reiniciado exitosamente\n\n' +
-            'Todos los datos históricos han sido eliminados.\n' +
-            'Ahora puedes registrar nuevos datos desde HOY.\n' +
-            'El calendario estará vacío y listo para nuevos registros.');
+      // Mensaje informativo
+      alert(`✅ Mes ${currentMonth} reiniciado exitosamente\n\n` +
+            `Los datos de ${currentMonth} han sido eliminados.\n` +
+            `Ahora puedes registrar nuevos datos desde HOY.\n\n` +
+            `📊 Los meses anteriores siguen disponibles en:\n` +
+            `• Historial de Meses (para ver resúmenes)\n` +
+            `• Calendario (para ver días específicos)\n` +
+            `• Exportar JSON (para backup)`);
 
       setLoading(false);
 
     } catch (error) {
-      console.error('❌ Error al reiniciar el sistema:', error);
-      setCloudStatus('❌ Error al reiniciar');
-      alert('❌ Hubo un error al intentar reiniciar el sistema.\nPor favor, intenta nuevamente.');
+      console.error(`❌ Error al reiniciar el mes ${currentMonth}:`, error);
+      setCloudStatus(`❌ Error al reiniciar mes`);
+      alert('❌ Hubo un error al intentar reiniciar el mes.\nPor favor, intenta nuevamente.');
       setLoading(false);
     }
   };
-  // ===================== FIN FUNCIÓN RESETEAR SISTEMA =====================
 
-  // Detectar cambio de mes y resetear
-  useEffect(() => {
-    const checkMonthChange = () => {
-      const currentMonth = currentDate.slice(0, 7); // "2025-01"
-      const savedMonth = localStorage.getItem('currentMonth');
+  // ===================== FUNCIÓN NUEVA: EXPORTAR MES ANTERIOR =====================
+  const exportPreviousMonth = () => {
+    try {
+      const previousMonth = getPreviousMonth();
+      const monthData = monthlyData[previousMonth];
       
-      if (savedMonth && savedMonth !== currentMonth) {
-        // ¡Cambió el mes! Guardar resumen y resetear
-        saveMonthSummary(savedMonth);
+      if (!monthData) {
+        alert(`ℹ️ No hay datos consolidados para el mes ${previousMonth}.\n\nPuedes exportar los datos de los meses que hayan sido consolidados en la sección de exportación general.`);
+        return;
       }
       
-      localStorage.setItem('currentMonth', currentMonth);
-    };
+      const exportObj = {
+        fechaExportacion: new Date().toISOString(),
+        mes: previousMonth,
+        datosMensuales: monthData,
+        informacion: {
+          diasRegistrados: monthData.informacionConsolidada.diasTotales,
+          primerDia: monthData.informacionConsolidada.primerDia,
+          ultimoDia: monthData.informacionConsolidada.ultimoDia,
+          totalGeneral: formatCurrency(monthData.acumuladoGeneral.total),
+          porcentajeFinal: monthData.porcentajeFinal
+        }
+      };
+      
+      const dataStr = JSON.stringify(exportObj, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      
+      const exportFileName = `mes-${previousMonth}-resumen.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileName);
+      linkElement.click();
+      
+      alert(`📥 Mes ${previousMonth} exportado exitosamente.`);
+    } catch (error) {
+      console.error('Error exportando mes anterior:', error);
+      alert('❌ Error al exportar el mes anterior.');
+    }
+  };
+
+  // ===================== FUNCIÓN AUXILIAR: OBTENER MES ANTERIOR =====================
+  const getPreviousMonth = () => {
+    const [year, month] = currentMonth.split('-').map(Number);
+    let prevYear = year;
+    let prevMonth = month - 1;
     
-    checkMonthChange();
-  }, [currentDate]);
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear = year - 1;
+    }
+    
+    return `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
+  };
 
   // 🆕 Efecto para actualizar todayData cuando se carga historicalData
   useEffect(() => {
@@ -192,27 +292,7 @@ const App = () => {
         return true;
       }
 
-      // Si no está en memoria, verificar en localStorage
-      const savedHistorical = JSON.parse(localStorage.getItem('historicalData') || '{}');
-      if (savedHistorical[currentDate]) {
-        console.log('✅ Día actual encontrado en localStorage');
-        const data = savedHistorical[currentDate];
-        
-        // Actualizar historicalData en memoria
-        setHistoricalData(prev => ({
-          ...prev,
-          [currentDate]: data
-        }));
-        
-        setIsDayCompleted(true);
-        setTodayData(data);
-        setCompletedSteps({ paso1: true, paso2: true });
-        setCurrentView('resumen');
-        
-        return true;
-      }
-
-      // Si no está en localStorage, verificar en Firebase
+      // Si no está en memoria, verificar en Firebase
       if (user) {
         try {
           const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
@@ -227,10 +307,6 @@ const App = () => {
               ...prev,
               [currentDate]: data
             }));
-            
-            // Actualizar localStorage
-            const updatedHistorical = { ...savedHistorical, [currentDate]: data };
-            localStorage.setItem('historicalData', JSON.stringify(updatedHistorical));
             
             setIsDayCompleted(true);
             setTodayData(data);
@@ -247,7 +323,7 @@ const App = () => {
       console.log('ℹ️ Día actual NO encontrado - listo para registrar');
       setIsDayCompleted(false);
       
-      // Cargar datos del día anterior para continuar acumulado
+      // Cargar datos del día anterior del MISMO MES
       loadPreviousDayData();
       
       return false;
@@ -283,11 +359,9 @@ const App = () => {
         } catch (firebaseError) {
           console.log('Firebase no disponible, usando modo local');
           setCloudStatus('⚠️ Usando modo local');
-          loadDataFromLocalStorage();
         }
         
-        // 3. 🆕 Verificar si el día actual ya está guardado (DESPUÉS de cargar todos los datos)
-        // IMPORTANTE: Esperar un momento para que los estados se actualicen
+        // 3. 🆕 Verificar si el día actual ya está guardado
         setTimeout(async () => {
           await checkIfTodayIsCompleted();
           setLoading(false);
@@ -306,7 +380,6 @@ const App = () => {
   // 🆕 Efecto para cargar día anterior después de verificar el día actual
   useEffect(() => {
     if (!loading && !isDayCompleted && Object.keys(historicalData).length >= 0) {
-      // Si no está completado y tenemos datos históricos, cargar acumulados
       if (Object.keys(historicalData).length > 0) {
         console.log('📊 Cargando acumulados desde datos históricos');
         loadPreviousDayData();
@@ -339,10 +412,6 @@ const App = () => {
       setHistoricalData(historical);
       setMonthlyData(monthly);
       
-      // Guardar también en localStorage como backup
-      localStorage.setItem('historicalData', JSON.stringify(historical));
-      localStorage.setItem('monthlyData', JSON.stringify(monthly));
-      
       console.log('✅ Datos cargados desde Firebase:', {
         diasHistoricos: Object.keys(historical).length,
         mesesConsolidados: Object.keys(monthly).length
@@ -351,24 +420,6 @@ const App = () => {
     } catch (error) {
       console.error('Error cargando de Firebase:', error);
       throw error;
-    }
-  };
-
-  // Función para cargar datos desde localStorage
-  const loadDataFromLocalStorage = () => {
-    try {
-      const savedHistorical = JSON.parse(localStorage.getItem('historicalData') || '{}');
-      setHistoricalData(savedHistorical);
-      
-      const savedMonths = JSON.parse(localStorage.getItem('monthlyData') || '{}');
-      setMonthlyData(savedMonths);
-      
-      console.log('✅ Datos cargados desde localStorage:', {
-        diasHistoricos: Object.keys(savedHistorical).length,
-        mesesConsolidados: Object.keys(savedMonths).length
-      });
-    } catch (err) {
-      console.error('Error cargando localStorage:', err);
     }
   };
 
@@ -486,32 +537,11 @@ const App = () => {
         [monthKey]: summary
       }));
       
-      // Guardar en localStorage
-      const savedMonths = JSON.parse(localStorage.getItem('monthlyData') || '{}');
-      savedMonths[monthKey] = summary;
-      localStorage.setItem('monthlyData', JSON.stringify(savedMonths));
-      
-      // Eliminar días del mes de Firebase
-      if (user) {
-        for (const [date] of monthDays) {
-          await deleteFromFirebase('historicalData', date);
-        }
-      }
-      
-      // Limpiar datos del mes anterior del estado
-      const newHistorical = {};
-      Object.entries(historicalData).forEach(([date, data]) => {
-        if (!date.startsWith(monthKey)) {
-          newHistorical[date] = data;
-        }
-      });
-      setHistoricalData(newHistorical);
-      
-      // Limpiar también del localStorage
-      localStorage.setItem('historicalData', JSON.stringify(newHistorical));
+      // No eliminar días del mes de Firebase (queda para historial)
+      // Los datos permanecen en historicalData para referencia histórica
       
       // Mostrar notificación
-      alert(`📅 ¡Mes ${monthKey} consolidado!\nSe han registrado ${summary.informacionConsolidada.diasTotales} días.\nEl JSON consolidado está disponible en el historial.`);
+      alert(`📅 ¡Mes ${monthKey} consolidado!\nSe han registrado ${summary.informacionConsolidada.diasTotales} días.\n\n💡 Los datos diarios permanecen en Firebase para historial.\nPuedes exportar el resumen desde el historial de meses.`);
       
     } catch (error) {
       console.error('Error saving month summary:', error);
@@ -526,80 +556,83 @@ const App = () => {
     return date.toISOString().split('T')[0];
   };
 
-  // Cargar datos del día anterior - VERSIÓN MEJORADA
-  const loadPreviousDayData = () => {
-    try {
-      console.log('🔄 Cargando datos del día anterior...');
+  // Cargar datos del día anterior - SOLO DEL MISMO MES
+  // Cargar datos del día anterior - SOLO DEL MISMO MES
+const loadPreviousDayData = () => {
+  try {
+    console.log('🔄 Cargando datos del día anterior del mes actual...');
+    
+    // Buscar el último día con datos del MISMO MES
+    const currentMonthDays = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(currentMonth))
+      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)); // Orden descendente
+    
+    console.log('Días del mes actual en histórico:', currentMonthDays);
+    
+    if (currentMonthDays.length > 0) {
+      // Tomar el día más reciente del mes actual (excluyendo hoy si existe)
+      const lastMonthDay = currentMonthDays.find(([date]) => date < currentDate);
       
-      const yesterday = getPreviousDay(currentDate);
-      console.log('Fecha de ayer:', yesterday);
-      
-      // Buscar el último día con datos (puede no ser exactamente ayer)
-      const dates = Object.keys(historicalData).sort();
-      console.log('Fechas disponibles:', dates);
-      
-      if (dates.length > 0) {
-        // Encontrar la fecha más reciente anterior a hoy
-        let lastDate = null;
-        for (let i = dates.length - 1; i >= 0; i--) {
-          if (dates[i] < currentDate) {
-            lastDate = dates[i];
-            break;
-          }
-        }
+      if (lastMonthDay) {
+        console.log('📅 Último día del mes actual con datos:', lastMonthDay[0]);
+        const prevData = lastMonthDay[1];
         
-        if (lastDate) {
-          console.log('📅 Último día con datos encontrado:', lastDate);
-          const prevData = historicalData[lastDate];
-          
-          setTodayData(prev => ({
-            ...prev,
-            date: currentDate,
-            paso1: {
-              dato1: '',
-              dato2: '',
-              total: 0,
-              acumuladoAnterior: prevData.paso1.acumulado,
-              acumulado: prevData.paso1.acumulado
-            },
-            paso2: {
-              dato1: '',
-              dato2: '',
-              total: 0,
-              acumuladoAnterior: prevData.paso2.acumulado,
-              acumulado: prevData.paso2.acumulado
-            },
-            porcentaje: 0
-          }));
-          
-          console.log('✅ Acumulados cargados desde:', lastDate);
-          return;
-        }
+        console.log('📊 Datos del día anterior:', {
+          fecha: lastMonthDay[0],
+          acumuladoPaso1: prevData.paso1.acumulado,
+          acumuladoPaso2: prevData.paso2.acumulado,
+          totalPaso1: prevData.paso1.total,
+          totalPaso2: prevData.paso2.total
+        });
+        
+        setTodayData(prev => ({
+          ...prev,
+          date: currentDate,
+          paso1: {
+            dato1: '',
+            dato2: '',
+            total: 0,
+            acumuladoAnterior: prevData.paso1.acumulado,  // ¡ACUMULADO, no total!
+            acumulado: prevData.paso1.acumulado  // Mismo que acumuladoAnterior
+          },
+          paso2: {
+            dato1: '',
+            dato2: '',
+            total: 0,
+            acumuladoAnterior: prevData.paso2.acumulado,  // ¡ACUMULADO, no total!
+            acumulado: prevData.paso2.acumulado  // Mismo que acumuladoAnterior
+          },
+          porcentaje: 0
+        }));
+        
+        console.log('✅ Acumulados cargados desde día anterior del mes:', lastMonthDay[0]);
+        return;
       }
-      
-      // No hay día anterior, empezar desde cero
-      console.log('ℹ️ No hay datos anteriores, empezando desde cero');
-      setTodayData(prev => ({
-        ...prev,
-        date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        porcentaje: 0
-      }));
-
-    } catch (error) {
-      console.error('Error loading previous day data:', error);
-      
-      // En caso de error, empezar desde cero
-      setTodayData(prev => ({
-        ...prev,
-        date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        porcentaje: 0
-      }));
     }
-  };
+    
+    // No hay día anterior en el mismo mes, empezar desde cero
+    console.log('ℹ️ No hay datos anteriores en el mes actual, empezando desde cero');
+    setTodayData(prev => ({
+      ...prev,
+      date: currentDate,
+      paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+      paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+      porcentaje: 0
+    }));
+
+  } catch (error) {
+    console.error('Error loading previous day data:', error);
+    
+    // En caso de error, empezar desde cero
+    setTodayData(prev => ({
+      ...prev,
+      date: currentDate,
+      paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+      paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+      porcentaje: 0
+    }));
+  }
+};
 
   // Función para formatear números como moneda
   const formatCurrency = (value) => {
@@ -709,6 +742,22 @@ const App = () => {
     try {
       console.log('💾 Guardando datos para el día:', todayData.date);
       
+      // 🆕 Mostrar advertencia si es último día del mes
+      if (isLastDayOfMonth) {
+        const confirmSave = window.confirm(
+          '📅 ¡ÚLTIMO DÍA DEL MES!\n\n' +
+          'Estás a punto de guardar datos del último día del mes.\n\n' +
+          '✅ Puedes registrar datos normalmente\n' +
+          '⚠️ Mañana comenzará un nuevo mes\n' +
+          '📊 El resumen del mes estará disponible para exportar manualmente\n\n' +
+          '¿Continuar con el guardado?'
+        );
+        
+        if (!confirmSave) {
+          return;
+        }
+      }
+      
       const newHistoricalData = {
         ...historicalData,
         [todayData.date]: { ...todayData }
@@ -716,9 +765,6 @@ const App = () => {
       
       // Actualizar el estado historicalData inmediatamente
       setHistoricalData(newHistoricalData);
-      
-      // Guardar en localStorage
-      localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
       
       // Guardar en Firebase (si hay conexión)
       if (user) {
@@ -759,9 +805,6 @@ const App = () => {
       };
       
       setHistoricalData(newHistoricalData);
-      
-      // Guardar en localStorage
-      localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
       
       // Guardar en Firebase (si hay conexión)
       if (user) {
@@ -846,7 +889,6 @@ const App = () => {
         if (importedData.datosDiarios) {
           newHistoricalData = importedData.datosDiarios;
           setHistoricalData(newHistoricalData);
-          localStorage.setItem('historicalData', JSON.stringify(newHistoricalData));
           
           // Guardar en Firebase si hay usuario
           if (user) {
@@ -859,7 +901,6 @@ const App = () => {
         if (importedData.resumenesMensuales) {
           newMonthlyData = importedData.resumenesMensuales;
           setMonthlyData(newMonthlyData);
-          localStorage.setItem('monthlyData', JSON.stringify(newMonthlyData));
           
           // Guardar en Firebase si hay usuario
           if (user) {
@@ -996,13 +1037,7 @@ const App = () => {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">📊 Historial de Meses</h2>
           <div className="flex space-x-2">
-            <button
-              onClick={exportData}
-              className="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition-colors"
-              title="Exportar todos los datos"
-            >
-              <Download size={20} />
-            </button>
+       
             <button
               onClick={() => setShowMonthlyHistory(false)}
               className="text-gray-500 hover:text-gray-700 text-2xl"
@@ -1025,16 +1060,37 @@ const App = () => {
                       year: 'numeric' 
                     })}
                   </h3>
-                  <button
-                    onClick={() => {
-                      const jsonStr = JSON.stringify(data, null, 2);
-                      navigator.clipboard.writeText(jsonStr);
-                      alert(`JSON del mes ${monthKey} copiado al portapapeles`);
-                    }}
-                    className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
-                  >
-                    Copiar JSON
-                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => {
+                        // Función para exportar un mes específico
+                        const exportObj = {
+                          fechaExportacion: new Date().toISOString(),
+                          mes: monthKey,
+                          datosMensuales: data,
+                          informacion: {
+                            diasRegistrados: data.informacionConsolidada.diasTotales,
+                            totalGeneral: formatCurrency(data.acumuladoGeneral.total),
+                            porcentajeFinal: data.porcentajeFinal
+                          }
+                        };
+                        
+                        const jsonStr = JSON.stringify(exportObj, null, 2);
+                        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
+                        const exportFileName = `mes-${monthKey}-resumen.json`;
+                        
+                        const linkElement = document.createElement('a');
+                        linkElement.setAttribute('href', dataUri);
+                        linkElement.setAttribute('download', exportFileName);
+                        linkElement.click();
+                        
+                        alert(`📥 Mes ${monthKey} exportado exitosamente.`);
+                      }}
+                      className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
+                    >
+                      Exportar
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4 text-sm mb-3">
@@ -1089,37 +1145,53 @@ const App = () => {
         )}
         
         <div className="mt-6 space-y-4">
-          {/* ===================== NUEVA SECCIÓN: REINICIAR SISTEMA ===================== */}
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-            <h4 className="font-bold text-red-900 mb-2">⚠️ Zona de peligro - Reiniciar sistema</h4>
-            <p className="text-sm text-red-700 mb-2">
-              <strong>Esta acción eliminará TODOS los datos del sistema:</strong>
-            </p>
-            <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
-              <li>Días históricos registrados</li>
-              <li>Meses consolidados</li>
-            </ul>
-            <p className="text-sm text-red-700 mb-3">
-              <strong>Después del reinicio:</strong>
-              <br/>
-              • El calendario aparecerá vacío
-              <br/>
-              • Podrás registrar datos desde el día actual
-              <br/>
-              • El sistema comenzará desde cero
+          {/* ===================== SECCIÓN: EXPORTAR MES ANTERIOR ===================== */}
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+            <h4 className="font-bold text-yellow-900 mb-2">📤 Exportar Mes Anterior</h4>
+            <p className="text-sm text-yellow-800 mb-3">
+              Exporta el resumen del mes anterior ({getPreviousMonth()}) como archivo JSON.
+              Los datos diarios permanecen en Firebase para historial.
             </p>
             <button
-              onClick={resetSystem}
+              onClick={exportPreviousMonth}
+              className="w-full bg-yellow-500 text-white py-3 rounded-lg font-semibold hover:bg-yellow-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Download size={20} />
+              <span>EXPORTAR MES ANTERIOR ({getPreviousMonth()})</span>
+            </button>
+          </div>
+          
+          {/* ===================== SECCIÓN MEJORADA: REINICIAR MES ACTUAL ===================== */}
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+            <h4 className="font-bold text-red-900 mb-2">⚠️ Reiniciar mes actual</h4>
+            <p className="text-sm text-red-700 mb-2">
+              <strong>Esta acción eliminará SOLO los datos del mes actual ({currentMonth}):</strong>
+            </p>
+            <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
+              <li>Días registrados en {currentMonth}</li>
+              <li>Acumulados de {currentMonth}</li>
+            </ul>
+            <p className="text-sm text-red-700 mb-3">
+              <strong>NO se eliminarán:</strong>
+              <br/>
+              • Meses anteriores (quedan en historial)
+              <br/>
+              • JSONs de meses completados
+              <br/>
+              • Resúmenes mensuales anteriores
+            </p>
+            <button
+              onClick={resetCurrentMonth}
               className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center space-x-2"
             >
               <Trash2 size={20} />
-              <span>REINICIAR SISTEMA COMPLETAMENTE</span>
+              <span>REINICIAR MES ACTUAL ({currentMonth})</span>
             </button>
             <p className="text-xs text-red-600 mt-2 text-center">
-              ⚠️ Esta acción NO se puede deshacer
+              ⚠️ Esta acción NO se puede deshacer para el mes actual
             </p>
           </div>
-          {/* ===================== FIN SECCIÓN REINICIAR SISTEMA ===================== */}
+          {/* ===================== FIN SECCIÓN REINICIAR MES ACTUAL ===================== */}
           
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="font-bold text-blue-900 mb-2">📤 Importar/Exportar Datos</h4>
@@ -1508,12 +1580,22 @@ const App = () => {
                   day: 'numeric'
                 })}
               </p>
-              {/* 🆕 Mostrar si el día ya fue completado */}
-              {isDayCompleted && (
-                <div className="mt-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm inline-flex items-center">
-                  ✅ Día completado - Datos guardados
-                </div>
-              )}
+              {/* 🆕 Mostrar información del mes */}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {isDayCompleted && (
+                  <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm inline-flex items-center">
+                    ✅ Día completado - Datos guardados
+                  </span>
+                )}
+                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
+                  📅 Mes: {currentMonth}
+                </span>
+                {isLastDayOfMonth && (
+                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    ⚠️ ¡ÚLTIMO DÍA DEL MES!
+                  </span>
+                )}
+              </div>
               <div className="mt-2 flex space-x-2">
                 <span className={`text-sm px-3 py-1 rounded-full flex items-center ${
                   cloudStatus.includes('✅') ? 'bg-green-100 text-green-700' :
@@ -1532,13 +1614,6 @@ const App = () => {
                   <span>Exportar Datos</span>
                 </button>
               </div>
-              {/* 🆕 Mensaje de depuración */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Debug: {Object.keys(historicalData).length} días en memoria | 
-                  Hoy en historical: {historicalData[currentDate] ? 'SÍ' : 'NO'}
-                </div>
-              )}
             </div>
             <button
               onClick={() => setShowCalendar(true)}
@@ -1556,6 +1631,29 @@ const App = () => {
             </button>
           </div>
         </div>
+
+        {/* 🆕 Mensaje de último día del mes */}
+        {isLastDayOfMonth && !isDayCompleted && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4 rounded-lg">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <span className="text-yellow-500 text-2xl">⚠️</span>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-bold text-yellow-800">¡ÚLTIMO DÍA DEL MES!</h3>
+                <div className="mt-1 text-yellow-700">
+                  <p className="font-semibold">📝 Puedes registrar datos normalmente hoy.</p>
+                  <ul className="mt-1 text-sm list-disc list-inside space-y-1">
+                    <li>Mañana comenzará un nuevo mes automáticamente</li>
+                    <li>Los acumulados se reiniciarán a CERO</li>
+                    <li>Los datos de este mes permanecerán en Firebase</li>
+                    <li>Podrás exportar el resumen del mes desde el historial</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Navegación */}
         <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
@@ -1620,10 +1718,10 @@ const App = () => {
                 </div>
               )}
               
-              {todayData.paso1.acumuladoAnterior > 0 && !isDayCompleted && (
+              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total acumulado anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
@@ -1664,7 +1762,7 @@ const App = () => {
                 <div className="bg-blue-50 p-4 rounded-lg space-y-1">
                   <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso1.total)}</p>
                   <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
-                    Acumulado: {formatCurrency(todayData.paso1.acumulado)}
+                    Acumulado del mes: {formatCurrency(todayData.paso1.acumulado)}
                   </p>
                 </div>
 
@@ -1711,7 +1809,7 @@ const App = () => {
               {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total acumulado anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
@@ -1752,7 +1850,7 @@ const App = () => {
                 <div className="bg-green-50 p-4 rounded-lg space-y-1">
                   <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(todayData.paso2.total)}</p>
                   <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
-                    Acumulado: {formatCurrency(todayData.paso2.acumulado)}
+                    Acumulado del mes: {formatCurrency(todayData.paso2.acumulado)}
                   </p>
                 </div>
 
@@ -1830,7 +1928,7 @@ const App = () => {
                 <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-6 rounded-lg border-2 border-orange-300">
                   <h3 className="font-bold text-orange-900 text-xl mb-4">📊 Acumulado del Mes</h3>
                   <p className="text-gray-700 text-lg mb-2">
-                    <strong>Total acumulado hasta hoy:</strong>
+                    <strong>Total acumulado del mes {currentMonth}:</strong>
                   </p>
                   <p className="font-bold text-4xl text-orange-900">
                     {formatCurrency(todayData.paso1.acumulado + todayData.paso2.acumulado)}
@@ -1853,7 +1951,7 @@ const App = () => {
 
         {/* Footer */}
         <div className="mt-4 text-center text-sm text-gray-500">
-          <p>💡 Los datos se guardan automáticamente en tu navegador y se sincronizan con la nube.</p>
+          <p>💡 Cada nuevo mes los acumulados comienzan desde CERO. Los meses anteriores permanecen en Firebase para historial.</p>
           <p className="mt-1">☁️ {cloudStatus}</p>
         </div>
       </div>
