@@ -1457,22 +1457,12 @@ const loadPreviousDayData = () => {
 
           {/* 🆕 Resumen con acumulado del mes */}
           <div className="border rounded-lg p-4 bg-purple-50">
-            <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen del Día</h3>
+            <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen del mes</h3>
             <div className="space-y-2 text-gray-700">
               <p>Acumulado Paso 1 (día): {formatCurrency(data.paso1.acumulado)}</p>
               <p>Acumulado Paso 2 (día): {formatCurrency(data.paso2.acumulado)}</p>
               <p className="font-bold text-2xl text-purple-900 mt-4">
                 Porcentaje: {data.porcentaje.toFixed(2)}%
-              </p>
-            </div>
-          </div>
-
-          {/* 🆕 Acumulado del mes hasta esta fecha */}
-          <div className="border rounded-lg p-4 bg-gradient-to-r from-orange-50 to-pink-50">
-            <h3 className="font-bold text-lg mb-3 text-orange-900">📊 Acumulado del Mes</h3>
-            <div className="">
-              <p className="font-bold text-4xl text-orange-900">
-                {formatCurrency(monthAccumulated.total)}
               </p>
             </div>
           </div>
@@ -1922,17 +1912,6 @@ const loadPreviousDayData = () => {
                       Porcentaje: {todayData.porcentaje.toFixed(2)}%
                     </p>
                   </div>
-                </div>
-
-                {/* 🆕 Acumulado del mes (suma de ambos acumulados) */}
-                <div className="bg-gradient-to-r from-orange-50 to-pink-50 p-6 rounded-lg border-2 border-orange-300">
-                  <h3 className="font-bold text-orange-900 text-xl mb-4">📊 Acumulado del Mes</h3>
-                  <p className="text-gray-700 text-lg mb-2">
-                    <strong>Total acumulado del mes {currentMonth}:</strong>
-                  </p>
-                  <p className="font-bold text-4xl text-orange-900">
-                    {formatCurrency(todayData.paso1.acumulado + todayData.paso2.acumulado)}
-                  </p>
                 </div>
 
                 {!isDayCompleted && (
