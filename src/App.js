@@ -1599,105 +1599,6 @@ const renderHistoricalView = () => {
       </div>
 
       <div className="space-y-6">
-        {/* Paso 1 */}
-        <div className="border rounded-lg p-4 bg-blue-50">
-          <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
-          {isEditing ? (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                <input
-                  type="text"
-                  value={formatCurrency(data.paso1.dato1)}
-                  onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
-                  className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                <input
-                  type="text"
-                  value={formatCurrency(data.paso1.dato2)}
-                  onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
-                  className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-              <div className="pt-2 border-t border-blue-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-xs text-gray-600">Acum. anterior:</p>
-                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.acumuladoAnterior)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-600">Total del día:</p>
-                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="pt-2 border-t border-blue-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-xs text-gray-600">Total del día:</p>
-                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Paso 2 */}
-        <div className="border rounded-lg p-4 bg-green-50">
-          <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
-          {isEditing ? (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                <input
-                  type="text"
-                  value={formatCurrency(data.paso2.dato1)}
-                  onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
-                  className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                <input
-                  type="text"
-                  value={formatCurrency(data.paso2.dato2)}
-                  onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
-                  className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                />
-              </div>
-              <div className="pt-2 border-t border-green-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-xs text-gray-600">Acum. anterior:</p>
-                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.acumuladoAnterior)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-600">Total del día:</p>
-                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="pt-2 border-t border-green-200">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-xs text-gray-600">Total del día:</p>
-                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Sección de Porcentajes */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1719,6 +1620,113 @@ const renderHistoricalView = () => {
                 {monthAccumulated.porcentaje.toFixed(2)}%
               </p>
             </div>
+          </div>
+        </div>
+
+         {/* Pasos 1 y 2 lado a lado */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Paso 1 */}
+          <div className="border rounded-lg p-4 bg-blue-50">
+            <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
+            {isEditing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso1.dato1)}
+                    onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
+                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso1.dato2)}
+                    onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
+                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div className="pt-2 border-t border-blue-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Acum. anterior:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1.acumuladoAnterior)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-600">Acumulado del mes:</p>
+                    <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1.acumulado)}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="pt-2 border-t border-blue-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Paso 2 */}
+          <div className="border rounded-lg p-4 bg-green-50">
+            <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
+            {isEditing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso2.dato1)}
+                    onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
+                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso2.dato2)}
+                    onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
+                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                  />
+                </div>
+                <div className="pt-2 border-t border-green-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Acum. anterior:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2.acumuladoAnterior)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="pt-2 border-t border-green-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
