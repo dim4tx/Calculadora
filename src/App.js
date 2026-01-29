@@ -1666,10 +1666,6 @@ const App = () => {
                         <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
                       </div>
                     </div>
-                    <div className="mt-2">
-                      <p className="text-xs text-gray-600">Acumulado del mes:</p>
-                      <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1.acumulado)}</p>
-                    </div>
                   </div>
                 </div>
               ) : (
