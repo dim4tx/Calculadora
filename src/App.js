@@ -1527,199 +1527,265 @@ const saveData = async () => {
     );
   };
 
-  // Renderizar vista histórica
-  const renderHistoricalView = () => {
-    const data = editData || historicalData[selectedDate];
+// Renderizar vista histórica
+const renderHistoricalView = () => {
+  const data = editData || historicalData[selectedDate];
+  
+  // Calcular acumulado del mes hasta la fecha seleccionada
+  const calculateMonthAccumulated = () => {
+    const monthKey = selectedDate.slice(0, 7);
+    const monthDays = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
+      .sort((a, b) => a[0].localeCompare(b[0]));
     
-    // 🆕 Calcular acumulado del mes hasta la fecha seleccionada
-    const calculateMonthAccumulated = () => {
-      const monthKey = selectedDate.slice(0, 7);
-      const monthDays = Object.entries(historicalData)
-        .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
-        .sort((a, b) => a[0].localeCompare(b[0]));
-      
-      if (monthDays.length === 0) return { paso1: 0, paso2: 0, total: 0, porcentaje: 0 };
-      
-      // El acumulado es el del último día hasta la fecha seleccionada
-      const lastDay = monthDays[monthDays.length - 1][1];
-      const acum1 = lastDay.paso1.acumulado;
-      const acum2 = lastDay.paso2.acumulado;
-      const total = acum1 + acum2;
-      
-      const porcentaje = acum1 > 0 && acum2 > 0 
-        ? (Math.min(acum1, acum2) / Math.max(acum1, acum2)) * 100 
-        : 0;
-      
-      return {
-        paso1: acum1,
-        paso2: acum2,
-        total: total,
-        porcentaje: porcentaje
-      };
-    };
+    if (monthDays.length === 0) return { paso1: 0, paso2: 0, total: 0, porcentaje: 0 };
     
-    const monthAccumulated = calculateMonthAccumulated();
+    const lastDay = monthDays[monthDays.length - 1][1];
+    const acum1 = lastDay.paso1.acumulado;
+    const acum2 = lastDay.paso2.acumulado;
+    const total = acum1 + acum2;
     
-    return (
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">
-            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </h2>
-          <button
-            onClick={() => {
-              setSelectedDate(null);
-              setIsEditing(false);
-              setEditData(null);
-            }}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
-          >
-            ✕
-          </button>
+    // Calcular porcentaje del mes: menor acumulado sobre mayor acumulado
+    let porcentaje = 0;
+    if (acum1 > 0 && acum2 > 0) {
+      const menor = Math.min(acum1, acum2);
+      const mayor = Math.max(acum1, acum2);
+      porcentaje = (menor / mayor) * 100;
+    }
+    
+    return { paso1: acum1, paso2: acum2, total, porcentaje };
+  };
+  
+  // Calcular porcentaje del día
+  const calculateDayPercentage = () => {
+    const totalPaso1 = data.paso1.total || 0;
+    const totalPaso2 = data.paso2.total || 0;
+    
+    let porcentajeDia = 0;
+    if (totalPaso1 > 0 && totalPaso2 > 0) {
+      const menor = Math.min(totalPaso1, totalPaso2);
+      const mayor = Math.max(totalPaso1, totalPaso2);
+      porcentajeDia = (menor / mayor) * 100;
+    }
+    
+    return porcentajeDia;
+  };
+  
+  const monthAccumulated = calculateMonthAccumulated();
+  const dayPercentage = calculateDayPercentage();
+  
+  return (
+    <div className="bg-white rounded-lg shadow-lg p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">
+          {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </h2>
+        <button
+          onClick={() => {
+            setSelectedDate(null);
+            setIsEditing(false);
+            setEditData(null);
+          }}
+          className="text-gray-500 hover:text-gray-700 text-2xl"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        {/* Paso 1 */}
+        <div className="border rounded-lg p-4 bg-blue-50">
+          <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
+          {isEditing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                <input
+                  type="text"
+                  value={formatCurrency(data.paso1.dato1)}
+                  onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
+                  className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                <input
+                  type="text"
+                  value={formatCurrency(data.paso1.dato2)}
+                  onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
+                  className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div className="pt-2 border-t border-blue-200">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-gray-600">Acum. anterior:</p>
+                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.acumuladoAnterior)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Total del día:</p>
+                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="pt-2 border-t border-blue-200">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-gray-600">Total del día:</p>
+                    <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-6">
-          {/* Paso 1 */}
-          <div className="border rounded-lg p-4 bg-blue-50">
-            <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
-            {isEditing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(data.paso1.dato1)}
-                    onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
-                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(data.paso1.dato2)}
-                    onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
-                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div className="pt-2 border-t border-blue-200">
-                  <p className="text-sm text-gray-600">Acumulado anterior: {formatCurrency(data.paso1.acumuladoAnterior)}</p>
-                  <p className="font-bold text-blue-900">Total del día: {formatCurrency(data.paso1.total)}</p>
-                  <p className="font-bold text-lg text-blue-900">Acumulado: {formatCurrency(data.paso1.acumulado)}</p>
+        {/* Paso 2 */}
+        <div className="border rounded-lg p-4 bg-green-50">
+          <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
+          {isEditing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                <input
+                  type="text"
+                  value={formatCurrency(data.paso2.dato1)}
+                  onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
+                  className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                <input
+                  type="text"
+                  value={formatCurrency(data.paso2.dato2)}
+                  onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
+                  className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                />
+              </div>
+              <div className="pt-2 border-t border-green-200">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-gray-600">Acum. anterior:</p>
+                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.acumuladoAnterior)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Total del día:</p>
+                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-2 text-gray-700">
-                <p>Dato 1: {formatCurrency(data.paso1.dato1)}</p>
-                <p>Dato 2: {formatCurrency(data.paso1.dato2)}</p>
-                <p className="text-sm text-gray-600">Acumulado anterior: {formatCurrency(data.paso1.acumuladoAnterior)}</p>
-                <p className="font-bold text-blue-900">Total del día: {formatCurrency(data.paso1.total)}</p>
-                <p className="font-bold text-lg text-blue-900">Acumulado: {formatCurrency(data.paso1.acumulado)}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="pt-2 border-t border-green-200">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-gray-600">Total del día:</p>
+                    <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
+          )}
+        </div>
+
+        {/* Sección de Porcentajes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Porcentaje del DÍA */}
+          <div className="border rounded-lg p-4 bg-amber-50 border-amber-200">
+            <h3 className="font-bold text-lg mb-3 text-amber-900">Porcentaje del DÍA</h3>
+            <div className="space-y-2 text-amber-600">
+              <p className="font-bold text-3xl text-center text-amber-700">
+                {dayPercentage.toFixed(2)}%
+              </p>
+            </div>
           </div>
 
-          {/* Paso 2 */}
-          <div className="border rounded-lg p-4 bg-green-50">
-            <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
-            {isEditing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(data.paso2.dato1)}
-                    onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
-                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                  <input
-                    type="text"
-                    value={formatCurrency(data.paso2.dato2)}
-                    onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
-                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                  />
-                </div>
-                <div className="pt-2 border-t border-green-200">
-                  <p className="text-sm text-gray-600">Acumulado anterior: {formatCurrency(data.paso2.acumuladoAnterior)}</p>
-                  <p className="font-bold text-green-900">Total del día: {formatCurrency(data.paso2.total)}</p>
-                  <p className="font-bold text-lg text-green-900">Acumulado: {formatCurrency(data.paso2.acumulado)}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2 text-gray-700">
-                <p>Dato 1: {formatCurrency(data.paso2.dato1)}</p>
-                <p>Dato 2: {formatCurrency(data.paso2.dato2)}</p>
-                <p className="text-sm text-gray-600">Acumulado anterior: {formatCurrency(data.paso2.acumuladoAnterior)}</p>
-                <p className="font-bold text-green-900">Total del día: {formatCurrency(data.paso2.total)}</p>
-                <p className="font-bold text-lg text-green-900">Acumulado: {formatCurrency(data.paso2.acumulado)}</p>
-              </div>
-            )}
-          </div>
-
-          {/* 🆕 Resumen con acumulado del mes */}
-          <div className="border rounded-lg p-4 bg-purple-50">
-            <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen del mes</h3>
-            <div className="space-y-2 text-gray-700">
-              <p>Acumulado Paso 1 (día): {formatCurrency(data.paso1.acumulado)}</p>
-              <p>Acumulado Paso 2 (día): {formatCurrency(data.paso2.acumulado)}</p>
-              <p className="font-bold text-2xl text-purple-900 mt-4">
-                Porcentaje: {data.porcentaje.toFixed(2)}%
+          {/* Porcentaje del MES */}
+          <div className="border rounded-lg p-4 bg-purple-50 border-purple-200">
+            <h3 className="font-bold text-lg mb-3 text-purple-900">Porcentaje del MES</h3>
+            <div className="space-y-2 text-purple-900">
+              <p className="font-bold text-3xl text-center text-purple-700">
+                {monthAccumulated.porcentaje.toFixed(2)}%
               </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-6 space-y-3">
-          {isEditing ? (
-            <div className="flex space-x-3">
-              <button
-                onClick={saveEdit}
-                className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Check size={20} />
-                <span>Guardar Cambios</span>
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <X size={20} />
-                <span>Cancelar</span>
-              </button>
+        {/* Resumen comparativo */}
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <h3 className="font-bold text-lg mb-3 text-gray-900">Resumen Comparativo</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600">Paso 1 - Total del día:</p>
+              <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1.total)}</p>
+              <p className="text-sm text-gray-600 mt-2">Paso 1 - Acum. del mes:</p>
+              <p className="font-bold text-xl text-blue-900">{formatCurrency(data.paso1.acumulado)}</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <button
-                onClick={() => startEditing(selectedDate)}
-                className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Edit2 size={20} />
-                <span>Editar Datos</span>
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate(null);
-                  setEditData(null);
-                  setShowCalendar(true);
-                }}
-                className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
-              >
-                Volver al Calendario
-              </button>
+            <div className="bg-green-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600">Paso 2 - Total del día:</p>
+              <p className="font-bold text-lg text-green-900">{formatCurrency(data.paso2.total)}</p>
+              <p className="text-sm text-gray-600 mt-2">Paso 2 - Acum. del mes:</p>
+              <p className="font-bold text-xl text-green-900">{formatCurrency(data.paso2.acumulado)}</p>
             </div>
-          )}
+          </div>
         </div>
       </div>
-    );
-  };
+
+      {/* Botones de acción */}
+      <div className="mt-6 space-y-3">
+        {isEditing ? (
+          <div className="flex space-x-3">
+            <button
+              onClick={saveEdit}
+              className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Check size={20} />
+              <span>Guardar Cambios</span>
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <X size={20} />
+              <span>Cancelar</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <button
+              onClick={() => startEditing(selectedDate)}
+              className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Edit2 size={20} />
+              <span>Editar Datos</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setEditData(null);
+                setShowCalendar(true);
+              }}
+              className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+            >
+              Volver al Calendario
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
   if (loading) {
     return (
@@ -1946,9 +2012,7 @@ const saveData = async () => {
                 <div className="bg-blue-50 p-4 rounded-lg space-y-1">
                   <p className="text-gray-700 font-semibold">Acumulado anterior: {formatCurrency(historicalData[currentDate]?.paso1?.acumuladoAnterior || todayData.paso1.acumuladoAnterior || 0)}</p>
                   <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(historicalData[currentDate]?.paso1?.total || todayData.paso1.total || 0)}</p>
-                  <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
-                    Acumulado del mes: {formatCurrency(historicalData[currentDate]?.paso1?.acumulado || todayData.paso1.acumulado || 0)}
-                  </p>
+
                 </div>
               </div>
             ) : (
