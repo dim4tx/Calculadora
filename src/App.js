@@ -1994,10 +1994,10 @@ const App = () => {
                 </div>
               )}
               
-              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
+              {todayData.paso1.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
@@ -2113,7 +2113,7 @@ const App = () => {
               {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
                   </p>
                 </div>
               )}
