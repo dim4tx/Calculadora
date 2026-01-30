@@ -32,8 +32,24 @@ const App = () => {
   // Estado para datos del día actual
   const [todayData, setTodayData] = useState({
     date: currentDate,
-    paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-    paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+    paso1: { 
+      dato1: '', 
+      dato2: '', 
+      total: 0, 
+      acumuladoAnterior: 0, 
+      acumulado: 0,
+      // 🆕 NUEVO CAMPO: Para guardar el total del día anterior
+      totalDiaAnterior: 0 
+    },
+    paso2: { 
+      dato1: '', 
+      dato2: '', 
+      total: 0, 
+      acumuladoAnterior: 0, 
+      acumulado: 0,
+      // 🆕 NUEVO CAMPO: Para guardar el total del día anterior
+      totalDiaAnterior: 0 
+    },
     porcentaje: 0
   });
 
@@ -74,8 +90,8 @@ const App = () => {
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
-          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
+          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
           porcentaje: 0
         }));
         
@@ -171,8 +187,8 @@ const App = () => {
       // 4. Resetear datos del día actual desde CERO
       setTodayData({
         date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
+        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
         porcentaje: 0
       });
       
@@ -277,14 +293,16 @@ const App = () => {
           dato2: dayData.paso1.dato2 || '',
           total: dayData.paso1.total || 0,
           acumuladoAnterior: dayData.paso1.acumuladoAnterior || 0,
-          acumulado: dayData.paso1.acumulado || 0
+          acumulado: dayData.paso1.acumulado || 0,
+          totalDiaAnterior: dayData.paso1.totalDiaAnterior || 0
         },
         paso2: {
           dato1: dayData.paso2.dato1 || '',
           dato2: dayData.paso2.dato2 || '',
           total: dayData.paso2.total || 0,
           acumuladoAnterior: dayData.paso2.acumuladoAnterior || 0,
-          acumulado: dayData.paso2.acumulado || 0
+          acumulado: dayData.paso2.acumulado || 0,
+          totalDiaAnterior: dayData.paso2.totalDiaAnterior || 0
         },
         porcentaje: dayData.porcentaje || 0
       });
@@ -313,14 +331,16 @@ const App = () => {
             dato2: data.paso1.dato2 || '',
             total: data.paso1.total || 0,
             acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
-            acumulado: data.paso1.acumulado || 0
+            acumulado: data.paso1.acumulado || 0,
+            totalDiaAnterior: data.paso1.totalDiaAnterior || 0
           },
           paso2: {
             dato1: data.paso2.dato1 || '',
             dato2: data.paso2.dato2 || '',
             total: data.paso2.total || 0,
             acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
-            acumulado: data.paso2.acumulado || 0
+            acumulado: data.paso2.acumulado || 0,
+            totalDiaAnterior: data.paso2.totalDiaAnterior || 0
           },
           porcentaje: data.porcentaje || 0
         });
@@ -356,14 +376,16 @@ const App = () => {
                 dato2: data.paso1.dato2 || '',
                 total: data.paso1.total || 0,
                 acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
-                acumulado: data.paso1.acumulado || 0
+                acumulado: data.paso1.acumulado || 0,
+                totalDiaAnterior: data.paso1.totalDiaAnterior || 0
               },
               paso2: {
                 dato1: data.paso2.dato1 || '',
                 dato2: data.paso2.dato2 || '',
                 total: data.paso2.total || 0,
                 acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
-                acumulado: data.paso2.acumulado || 0
+                acumulado: data.paso2.acumulado || 0,
+                totalDiaAnterior: data.paso2.totalDiaAnterior || 0
               },
               porcentaje: data.porcentaje || 0
             });
@@ -615,7 +637,7 @@ const App = () => {
     return date.toISOString().split('T')[0];
   };
 
-  // Cargar datos del día anterior - SOLO DEL MISMO MES
+  // 🆕 CORRECCIÓN: Cargar datos del día anterior - SOLO DEL MISMO MES
   const loadPreviousDayData = () => {
     try {
       console.log('🔄 Cargando datos del día anterior del mes actual...');
@@ -628,10 +650,14 @@ const App = () => {
       console.log('Días disponibles del mes actual:', diasDelMes.map(([date]) => date));
       
       if (diasDelMes.length > 0) {
-        const ultimoDia = diasDelMes[0][1];
-        console.log('📅 Último día del mes con datos:', diasDelMes[0][0]);
+        const [fechaAnterior, datosAnterior] = diasDelMes[0];
+        console.log('📅 Último día del mes con datos:', fechaAnterior);
         
-        // Cargar acumulados CORRECTAMENTE
+        // 🆕 Obtener el TOTAL del día anterior (suma de dato1 + dato2)
+        const totalDiaAnteriorPaso1 = datosAnterior.paso1.total || 0;
+        const totalDiaAnteriorPaso2 = datosAnterior.paso2.total || 0;
+        
+        // 🆕 Cargar datos con totalDiaAnterior
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
@@ -639,27 +665,46 @@ const App = () => {
             dato1: '',
             dato2: '',
             total: 0,
-            acumuladoAnterior: ultimoDia.paso1.acumulado || 0,
-            acumulado: ultimoDia.paso1.acumulado || 0
+            acumuladoAnterior: datosAnterior.paso1.acumulado || 0,
+            acumulado: datosAnterior.paso1.acumulado || 0,
+            totalDiaAnterior: totalDiaAnteriorPaso1  // 🆕 ESTE ES EL QUE SE MUESTRA EN EL MENSAJE AMARILLO
           },
           paso2: {
             dato1: '',
             dato2: '',
             total: 0,
-            acumuladoAnterior: ultimoDia.paso2.acumulado || 0,
-            acumulado: ultimoDia.paso2.acumulado || 0
+            acumuladoAnterior: datosAnterior.paso2.acumulado || 0,
+            acumulado: datosAnterior.paso2.acumulado || 0,
+            totalDiaAnterior: totalDiaAnteriorPaso2  // 🆕 ESTE ES EL QUE SE MUESTRA EN EL MENSAJE AMARILLO
           },
           porcentaje: 0
         }));
         
-        console.log('✅ Acumulados cargados correctamente desde:', diasDelMes[0][0]);
+        console.log('✅ Acumulados cargados correctamente desde:', fechaAnterior, {
+          totalDiaAnteriorPaso1,
+          totalDiaAnteriorPaso2
+        });
       } else {
         console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
-          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+          paso1: { 
+            dato1: '', 
+            dato2: '', 
+            total: 0, 
+            acumuladoAnterior: 0, 
+            acumulado: 0,
+            totalDiaAnterior: 0 
+          },
+          paso2: { 
+            dato1: '', 
+            dato2: '', 
+            total: 0, 
+            acumuladoAnterior: 0, 
+            acumulado: 0,
+            totalDiaAnterior: 0 
+          },
           porcentaje: 0
         }));
       }
@@ -669,8 +714,22 @@ const App = () => {
       setTodayData(prev => ({
         ...prev,
         date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0 },
+        paso1: { 
+          dato1: '', 
+          dato2: '', 
+          total: 0, 
+          acumuladoAnterior: 0, 
+          acumulado: 0,
+          totalDiaAnterior: 0 
+        },
+        paso2: { 
+          dato1: '', 
+          dato2: '', 
+          total: 0, 
+          acumuladoAnterior: 0, 
+          acumulado: 0,
+          totalDiaAnterior: 0 
+        },
         porcentaje: 0
       }));
     }
@@ -944,14 +1003,16 @@ const App = () => {
           dato2: todayData.paso1.dato2 || '',
           total: totalDiaPaso1,
           acumuladoAnterior: acumuladoAnteriorPaso1,
-          acumulado: nuevoAcumuladoPaso1
+          acumulado: nuevoAcumuladoPaso1,
+          totalDiaAnterior: todayData.paso1.totalDiaAnterior || 0  // 🆕 Guardar totalDiaAnterior
         },
         paso2: {
           dato1: todayData.paso2.dato1 || '',
           dato2: todayData.paso2.dato2 || '',
           total: totalDiaPaso2,
           acumuladoAnterior: acumuladoAnteriorPaso2,
-          acumulado: nuevoAcumuladoPaso2
+          acumulado: nuevoAcumuladoPaso2,
+          totalDiaAnterior: todayData.paso2.totalDiaAnterior || 0  // 🆕 Guardar totalDiaAnterior
         },
         porcentaje: porcentajeDia  // ← ¡PORCENTAJE DEL DÍA!
       };
@@ -1122,14 +1183,16 @@ const App = () => {
               dato2: todayImportedData.paso1.dato2 || '',
               total: todayImportedData.paso1.total || 0,
               acumuladoAnterior: todayImportedData.paso1.acumuladoAnterior || 0,
-              acumulado: todayImportedData.paso1.acumulado || 0
+              acumulado: todayImportedData.paso1.acumulado || 0,
+              totalDiaAnterior: todayImportedData.paso1.totalDiaAnterior || 0
             },
             paso2: {
               dato1: todayImportedData.paso2.dato1 || '',
               dato2: todayImportedData.paso2.dato2 || '',
               total: todayImportedData.paso2.total || 0,
               acumuladoAnterior: todayImportedData.paso2.acumuladoAnterior || 0,
-              acumulado: todayImportedData.paso2.acumulado || 0
+              acumulado: todayImportedData.paso2.acumulado || 0,
+              totalDiaAnterior: todayImportedData.paso2.totalDiaAnterior || 0
             }
           };
           
@@ -1171,14 +1234,16 @@ const App = () => {
                   dato2: '',
                   total: 0,
                   acumuladoAnterior: lastData.paso1.acumulado,
-                  acumulado: lastData.paso1.acumulado
+                  acumulado: lastData.paso1.acumulado,
+                  totalDiaAnterior: lastData.paso1.total
                 },
                 paso2: {
                   dato1: '',
                   dato2: '',
                   total: 0,
                   acumuladoAnterior: lastData.paso2.acumulado,
-                  acumulado: lastData.paso2.acumulado
+                  acumulado: lastData.paso2.acumulado,
+                  totalDiaAnterior: lastData.paso2.total
                 },
                 porcentaje: 0
               }));
@@ -1994,10 +2059,11 @@ const App = () => {
                 </div>
               )}
               
-              {todayData.paso1.acumuladoAnterior > 0 && !isDayCompleted && (
+              {/* 🆕 CORRECCIÓN: Mostrar TOTAL DEL DÍA ANTERIOR en lugar de acumulado anterior */}
+              {todayData.paso1.totalDiaAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso1.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del día anterior: {formatCurrency(todayData.paso1.totalDiaAnterior)}</strong>
                   </p>
                 </div>
               )}
@@ -2023,7 +2089,9 @@ const App = () => {
                     <div className="bg-blue-50 p-4 rounded-lg space-y-1">
                       <p className="text-gray-700 font-semibold">Acumulado anterior: {formatCurrency(historicalData[currentDate]?.paso1?.acumuladoAnterior || todayData.paso1.acumuladoAnterior || 0)}</p>
                       <p className="text-gray-700 font-semibold">Total del día: {formatCurrency(historicalData[currentDate]?.paso1?.total || todayData.paso1.total || 0)}</p>
-
+                      <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
+                        Acumulado del mes: {formatCurrency(historicalData[currentDate]?.paso1?.acumulado || todayData.paso1.acumulado || 0)}
+                      </p>
                     </div>
                   </div>
                 ) : (
@@ -2110,10 +2178,11 @@ const App = () => {
                 </div>
               )}
 
-              {todayData.paso2.acumuladoAnterior > 0 && !isDayCompleted && (
+              {/* 🆕 CORRECCIÓN: Mostrar TOTAL DEL DÍA ANTERIOR en lugar de acumulado anterior */}
+              {todayData.paso2.totalDiaAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
-                    📊 <strong>Total del dia anterior: {formatCurrency(todayData.paso2.acumuladoAnterior)}</strong>
+                    📊 <strong>Total del día anterior: {formatCurrency(todayData.paso2.totalDiaAnterior)}</strong>
                   </p>
                 </div>
               )}
