@@ -3,6 +3,8 @@ import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, C
 import { db, auth } from './firebase';
 import { collection, doc, setDoc, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 const App = () => {
   const [currentView, setCurrentView] = useState('paso1');
@@ -17,19 +19,11 @@ const App = () => {
     paso2: false
   });
   
-  // Fecha actual REAL (sin simulador)
   const [currentDate] = useState(new Date().toISOString().split('T')[0]);
-  
-  // 🆕 Estado para saber si el día actual ya fue guardado
   const [isDayCompleted, setIsDayCompleted] = useState(false);
-  
-  // 🆕 Estado para controlar el mes actual
-  const [currentMonth, setCurrentMonth] = useState(currentDate.slice(0, 7)); // "YYYY-MM"
-  
-  // 🆕 Estado para último día del mes
+  const [currentMonth, setCurrentMonth] = useState(currentDate.slice(0, 7));
   const [isLastDayOfMonth, setIsLastDayOfMonth] = useState(false);
   
-  // Estado para datos del día actual
   const [todayData, setTodayData] = useState({
     date: currentDate,
     paso1: { 
@@ -38,7 +32,6 @@ const App = () => {
       total: 0, 
       acumuladoAnterior: 0, 
       acumulado: 0,
-      // 🆕 NUEVO CAMPO: Para guardar el total del día anterior
       totalDiaAnterior: 0 
     },
     paso2: { 
@@ -47,23 +40,675 @@ const App = () => {
       total: 0, 
       acumuladoAnterior: 0, 
       acumulado: 0,
-      // 🆕 NUEVO CAMPO: Para guardar el total del día anterior
       totalDiaAnterior: 0 
     },
     porcentaje: 0
   });
 
-  // Datos históricos
   const [historicalData, setHistoricalData] = useState({});
-  
-  // Datos mensuales (resumen de cada mes)
   const [monthlyData, setMonthlyData] = useState({});
-
-  // Estado de carga, errores y Firebase
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
+
+  // ===================== FUNCIONES JSON SIMPLIFICADAS =====================
+  // FUNCIÓN SIMPLE PARA EXPORTAR TODO A JSON
+  const exportAllDataToJSON = () => {
+    try {
+      const exportData = {
+        fechaExportacion: new Date().toISOString(),
+        aplicacion: 'Calculadora Diaria',
+        datosDiarios: historicalData,
+        resumenesMensuales: monthlyData,
+        estadisticas: {
+          totalDias: Object.keys(historicalData).length,
+          totalMeses: Object.keys(monthlyData).length,
+          ultimoMes: currentMonth,
+          diaActualCompletado: isDayCompleted
+        }
+      };
+      
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `backup_datos_${currentDate}.json`;
+      link.click();
+      
+      alert(`✅ Backup exportado exitosamente!\n\n📊 Contenido:\n• ${Object.keys(historicalData).length} días registrados\n• ${Object.keys(monthlyData).length} meses resumidos\n\n💾 Archivo: backup_datos_${currentDate}.json`);
+      
+    } catch (error) {
+      console.error('Error exportando JSON:', error);
+      alert('❌ Error al exportar los datos. Intenta nuevamente.');
+    }
+  };
+
+  // FUNCIÓN SIMPLE PARA IMPORTAR DESDE JSON
+  const importData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    
+    reader.onload = async (e) => {
+      try {
+        setCloudStatus('⏳ Importando backup...');
+        const importedData = JSON.parse(e.target.result);
+        
+        console.log('📥 Datos importados:', importedData);
+        
+        // Extraer los datos directamente
+        let datosImportados = importedData.datosDiarios || importedData.historicalData || importedData;
+        let resumenesImportados = importedData.resumenesMensuales || importedData.monthlyData || {};
+        
+        // Validar que hay datos
+        if (Object.keys(datosImportados).length === 0) {
+          throw new Error('El archivo no contiene datos válidos');
+        }
+        
+        // Actualizar el estado
+        setHistoricalData(datosImportados);
+        setMonthlyData(resumenesImportados);
+        
+        // Verificar si el día actual está en los datos importados
+        if (datosImportados[currentDate]) {
+          const datosHoy = datosImportados[currentDate];
+          setTodayData(datosHoy);
+          setIsDayCompleted(true);
+          setCompletedSteps({ paso1: true, paso2: true });
+          setCurrentView('resumen');
+          
+          alert(`✅ Backup importado exitosamente!\n\n📊 Se encontraron datos para hoy (${currentDate}).\nLos datos se cargaron en modo solo lectura.`);
+        } else {
+          // Buscar el último día registrado para continuar
+          const fechas = Object.keys(datosImportados).sort();
+          if (fechas.length > 0) {
+            const ultimaFecha = fechas[fechas.length - 1];
+            const ultimosDatos = datosImportados[ultimaFecha];
+            
+            // Preparar para continuar desde hoy
+            setTodayData({
+              date: currentDate,
+              paso1: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: ultimosDatos.paso1.acumulado || 0,
+                acumulado: ultimosDatos.paso1.acumulado || 0,
+                totalDiaAnterior: ultimosDatos.paso1.total || 0
+              },
+              paso2: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: ultimosDatos.paso2.acumulado || 0,
+                acumulado: ultimosDatos.paso2.acumulado || 0,
+                totalDiaAnterior: ultimosDatos.paso2.total || 0
+              },
+              porcentaje: 0
+            });
+            
+            alert(`✅ Backup importado exitosamente!\n\n📊 ${fechas.length} días importados.\n📅 Último día registrado: ${ultimaFecha}\n\n💡 Puedes continuar registrando desde hoy.`);
+          } else {
+            alert(`✅ Backup importado exitosamente!\n\n💡 Puedes comenzar a registrar datos desde hoy.`);
+          }
+          
+          setIsDayCompleted(false);
+          setCompletedSteps({ paso1: false, paso2: false });
+          setCurrentView('paso1');
+        }
+        
+        setCloudStatus('✅ Backup importado - Listo');
+        
+      } catch (error) {
+        console.error('Error importando JSON:', error);
+        setCloudStatus('❌ Error al importar');
+        alert(`❌ Error al importar el backup:\n\n${error.message}\n\n💡 Asegúrate de usar un archivo exportado desde esta aplicación.`);
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+
+  // ===================== FUNCIÓN PRINCIPAL PARA EXPORTAR A EXCEL =====================
+  const exportToExcel = (type = 'full') => {
+    try {
+      if (type === 'monthly' && (!monthlyData || Object.keys(monthlyData).length === 0)) {
+        alert("No hay datos mensuales para exportar.");
+        return;
+      }
+
+      if (type !== 'monthly' && (!historicalData || Object.keys(historicalData).length === 0)) {
+        alert("No hay datos diarios para exportar.");
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Calculadora Diaria App';
+      workbook.created = new Date();
+
+      const dayDataForExport = isDayCompleted && historicalData[currentDate] 
+        ? historicalData[currentDate] 
+        : todayData;
+
+      // HOJA 1: RESUMEN DEL DÍA ACTUAL
+      if (type === 'full' || type === 'today') {
+        const todaySheet = workbook.addWorksheet('Día Actual');
+        
+        todaySheet.getColumn(1).width = 25;
+        todaySheet.getColumn(2).width = 25;
+        
+        const todayTitleRow = todaySheet.addRow(['REPORTE DEL DÍA ACTUAL']);
+        todayTitleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
+        todayTitleRow.alignment = { horizontal: 'center' };
+        todaySheet.mergeCells('A1:B1');
+
+        todaySheet.addRow(['Fecha:', currentDate]);
+        todaySheet.addRow(['Mes actual:', currentMonth]);
+        todaySheet.addRow(['Estado:', isDayCompleted ? '✅ Día completado' : '⏳ Día en progreso']);
+        todaySheet.addRow([]);
+
+        // Paso 1
+        const paso1Header = todaySheet.addRow(['PASO 1', '']);
+        paso1Header.font = { bold: true, color: { argb: 'FFFFFF' } };
+        paso1Header.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '2E75B6' }
+        };
+        todaySheet.mergeCells('A6:B6');
+
+        todaySheet.addRow(['Dato 1:', formatCurrency(dayDataForExport.paso1.dato1).replace(/[^\d]/g, '')]);
+        todaySheet.addRow(['Dato 2:', formatCurrency(dayDataForExport.paso1.dato2).replace(/[^\d]/g, '')]);
+        todaySheet.addRow(['Total del día:', dayDataForExport.paso1.total || 0]);
+        todaySheet.addRow(['Acumulado anterior:', dayDataForExport.paso1.acumuladoAnterior || 0]);
+        todaySheet.addRow(['Acumulado del mes:', dayDataForExport.paso1.acumulado || 0]);
+        todaySheet.addRow([]);
+
+        // Paso 2
+        const paso2Header = todaySheet.addRow(['PASO 2', '']);
+        paso2Header.font = { bold: true, color: { argb: 'FFFFFF' } };
+        paso2Header.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '70AD47' }
+        };
+        todaySheet.mergeCells('A13:B13');
+
+        todaySheet.addRow(['Dato 1:', formatCurrency(dayDataForExport.paso2.dato1).replace(/[^\d]/g, '')]);
+        todaySheet.addRow(['Dato 2:', formatCurrency(dayDataForExport.paso2.dato2).replace(/[^\d]/g, '')]);
+        todaySheet.addRow(['Total del día:', dayDataForExport.paso2.total || 0]);
+        todaySheet.addRow(['Acumulado anterior:', dayDataForExport.paso2.acumuladoAnterior || 0]);
+        todaySheet.addRow(['Acumulado del mes:', dayDataForExport.paso2.acumulado || 0]);
+        todaySheet.addRow([]);
+
+        // Resumen general
+        const resumenHeader = todaySheet.addRow(['RESUMEN GENERAL', '']);
+        resumenHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
+        resumenHeader.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '7030A0' }
+        };
+        todaySheet.mergeCells('A20:B20');
+
+        const totalDia = (dayDataForExport.paso1.total || 0) + (dayDataForExport.paso2.total || 0);
+        const totalAcumulado = (dayDataForExport.paso1.acumulado || 0) + (dayDataForExport.paso2.acumulado || 0);
+        
+        let porcentajeDia = 0;
+        const totalPaso1 = dayDataForExport.paso1.total || 0;
+        const totalPaso2 = dayDataForExport.paso2.total || 0;
+        
+        if (totalPaso1 > 0 && totalPaso2 > 0) {
+          const menor = Math.min(totalPaso1, totalPaso2);
+          const mayor = Math.max(totalPaso1, totalPaso2);
+          porcentajeDia = (menor / mayor) * 100;
+        }
+        
+        todaySheet.addRow(['Total del día (P1 + P2):', totalDia]);
+        todaySheet.addRow(['Total acumulado (P1 + P2):', totalAcumulado]);
+        todaySheet.addRow(['Porcentaje del día:', porcentajeDia / 100]);
+
+        // Formato de números
+        for (let i = 7; i <= 22; i++) {
+          if (i !== 6 && i !== 13 && i !== 20) {
+            const cell = todaySheet.getCell(`B${i}`);
+            if (i !== 22) {
+              cell.numFmt = '#,##0';
+            }
+          }
+        }
+
+        // Formato porcentaje
+        const porcentajeCell = todaySheet.getCell('B22');
+        porcentajeCell.numFmt = '0.00%';
+      }
+
+      // HOJA 2: DETALLE DIARIO COMPLETO
+      if (type === 'full' || type === 'daily') {
+        const dailySheet = workbook.addWorksheet('Detalle Diario');
+
+        dailySheet.getColumn(1).width = 15;
+        dailySheet.getColumn(2).width = 20;
+        dailySheet.getColumn(3).width = 15;
+        dailySheet.getColumn(4).width = 15;
+        dailySheet.getColumn(5).width = 15;
+        dailySheet.getColumn(6).width = 20;
+        dailySheet.getColumn(7).width = 15;
+        dailySheet.getColumn(8).width = 15;
+        dailySheet.getColumn(9).width = 15;
+        dailySheet.getColumn(10).width = 20;
+        dailySheet.getColumn(11).width = 15;
+        dailySheet.getColumn(12).width = 20;
+
+        const dailyTitleRow = dailySheet.addRow(['DETALLE DIARIO COMPLETO']);
+        dailyTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
+        dailyTitleRow.alignment = { horizontal: 'center' };
+        dailySheet.mergeCells('A1:L1');
+
+        const dailyHeaders = dailySheet.addRow([
+          'Fecha',
+          'Día de la Semana',
+          'P1 - Dato 1',
+          'P1 - Dato 2',
+          'P1 - Total Día',
+          'P1 - Acumulado',
+          'P2 - Dato 1',
+          'P2 - Dato 2',
+          'P2 - Total Día',
+          'P2 - Acumulado',
+          'Porcentaje Día',
+          'Total del Día'
+        ]);
+
+        dailyHeaders.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: '4472C4' }
+          };
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+          cell.alignment = { horizontal: 'center' };
+        });
+
+        const sortedDates = Object.keys(historicalData).sort();
+
+        sortedDates.forEach((date, index) => {
+          const data = historicalData[date];
+          const dateObj = new Date(date + 'T00:00:00');
+          const dayOfWeek = dateObj.toLocaleDateString('es-CO', { weekday: 'long' });
+          
+          let porcentajeDia = 0;
+          const totalPaso1Dia = data.paso1.total || 0;
+          const totalPaso2Dia = data.paso2.total || 0;
+          
+          if (totalPaso1Dia > 0 && totalPaso2Dia > 0) {
+            const menor = Math.min(totalPaso1Dia, totalPaso2Dia);
+            const mayor = Math.max(totalPaso1Dia, totalPaso2Dia);
+            porcentajeDia = (menor / mayor) * 100;
+          }
+          
+          const row = dailySheet.addRow([
+            date,
+            dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1),
+            parseFloat(data.paso1.dato1 || 0),
+            parseFloat(data.paso1.dato2 || 0),
+            data.paso1.total || 0,
+            data.paso1.acumulado || 0,
+            parseFloat(data.paso2.dato1 || 0),
+            parseFloat(data.paso2.dato2 || 0),
+            data.paso2.total || 0,
+            data.paso2.acumulado || 0,
+            porcentajeDia / 100,
+            (data.paso1.total || 0) + (data.paso2.total || 0)
+          ]);
+
+          if (index % 2 === 0) {
+            row.eachCell((cell) => {
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'E6F0FF' }
+              };
+            });
+          }
+
+          row.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+          });
+
+          const porcentajeCell = row.getCell(11);
+          porcentajeCell.numFmt = '0.00%';
+
+          [3, 4, 5, 6, 7, 8, 9, 10, 12].forEach(colIndex => {
+            const cell = row.getCell(colIndex);
+            cell.numFmt = '#,##0';
+          });
+        });
+
+        if (sortedDates.length > 0) {
+          dailySheet.addRow([]);
+          
+          const totalsRow = dailySheet.addRow([
+            'TOTALES',
+            '',
+            `=SUM(C3:C${sortedDates.length + 2})`,
+            `=SUM(D3:D${sortedDates.length + 2})`,
+            `=SUM(E3:E${sortedDates.length + 2})`,
+            '',
+            `=SUM(G3:G${sortedDates.length + 2})`,
+            `=SUM(H3:H${sortedDates.length + 2})`,
+            `=SUM(I3:I${sortedDates.length + 2})`,
+            '',
+            '',
+            `=SUM(L3:L${sortedDates.length + 2})`
+          ]);
+
+          totalsRow.font = { bold: true };
+          totalsRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF2CC' }
+          };
+
+          totalsRow.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+          });
+
+          [3, 4, 5, 7, 8, 9, 12].forEach(colIndex => {
+            const cell = totalsRow.getCell(colIndex);
+            cell.numFmt = '#,##0';
+          });
+        }
+      }
+
+      // HOJA 3: RESUMEN POR MES
+      if (type === 'full' || type === 'monthly') {
+        if (Object.keys(monthlyData).length > 0) {
+          const monthlySheet = workbook.addWorksheet('Resumen por Mes');
+
+          monthlySheet.getColumn(1).width = 20;
+          monthlySheet.getColumn(2).width = 15;
+          monthlySheet.getColumn(3).width = 20;
+          monthlySheet.getColumn(4).width = 20;
+          monthlySheet.getColumn(5).width = 20;
+          monthlySheet.getColumn(6).width = 15;
+
+          const monthlyTitleRow = monthlySheet.addRow(['RESUMEN POR MES']);
+          monthlyTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
+          monthlyTitleRow.alignment = { horizontal: 'center' };
+          monthlySheet.mergeCells('A1:F1');
+
+          const monthlyHeaders = monthlySheet.addRow([
+            'Mes',
+            'Días',
+            'Total Paso 1',
+            'Total Paso 2',
+            'Total General',
+            'Porcentaje'
+          ]);
+
+          monthlyHeaders.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: '2E75B6' }
+            };
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+            cell.alignment = { horizontal: 'center' };
+          });
+
+          const months = Object.keys(monthlyData).sort();
+
+          months.forEach((month, index) => {
+            const data = monthlyData[month];
+            const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+            const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+            const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+            const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
+            
+            let porcentajeMes = data.porcentajeFinal || 0;
+            if (porcentajeMes === 0 && totalPaso1 > 0 && totalPaso2 > 0) {
+              const menor = Math.min(totalPaso1, totalPaso2);
+              const mayor = Math.max(totalPaso1, totalPaso2);
+              porcentajeMes = (menor / mayor) * 100;
+            }
+
+            const row = monthlySheet.addRow([
+              month,
+              diasTotales,
+              totalPaso1,
+              totalPaso2,
+              totalGeneral,
+              porcentajeMes / 100
+            ]);
+
+            if (index % 2 === 0) {
+              row.eachCell((cell) => {
+                cell.fill = {
+                  type: 'pattern',
+                  pattern: 'solid',
+                  fgColor: { argb: 'F2F2F2' }
+                };
+              });
+            }
+
+            row.eachCell((cell) => {
+              cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+              };
+            });
+
+            [3, 4, 5].forEach(colIndex => {
+              const cell = row.getCell(colIndex);
+              cell.numFmt = '#,##0';
+            });
+
+            const porcentajeCell = row.getCell(6);
+            porcentajeCell.numFmt = '0.00%';
+          });
+
+          if (months.length > 0) {
+            monthlySheet.addRow([]);
+            
+            const totalsRow = monthlySheet.addRow([
+              'TOTALES',
+              `=SUM(B3:B${months.length + 2})`,
+              `=SUM(C3:C${months.length + 2})`,
+              `=SUM(D3:D${months.length + 2})`,
+              `=SUM(E3:E${months.length + 2})`,
+              ''
+            ]);
+
+            totalsRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+            totalsRow.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'C00000' }
+            };
+
+            totalsRow.eachCell((cell) => {
+              cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+              };
+            });
+
+            [3, 4, 5].forEach(colIndex => {
+              const cell = totalsRow.getCell(colIndex);
+              cell.numFmt = '#,##0';
+            });
+          }
+        } else if (type === 'monthly') {
+          alert("No hay datos mensuales para exportar.");
+          return;
+        }
+      }
+
+      // Generar el archivo
+      workbook.xlsx.writeBuffer().then(buffer => {
+        const blob = new Blob([buffer], { 
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        
+        let fileName = '';
+        let message = '';
+        
+        if (type === 'full') {
+          fileName = `calculadora_diaria_completo_${currentDate}.xlsx`;
+          message = `✅ Reporte completo exportado exitosamente.\n\nArchivo: ${fileName}`;
+        } else if (type === 'today') {
+          fileName = `calculadora_diaria_hoy_${currentDate}.xlsx`;
+          message = `✅ Reporte del día actual exportado exitosamente.\n\nArchivo: ${fileName}`;
+        } else if (type === 'daily') {
+          fileName = `calculadora_diaria_detalle_${currentDate}.xlsx`;
+          message = `✅ Detalle diario exportado exitosamente.\n\nArchivo: ${fileName}`;
+        } else if (type === 'monthly') {
+          fileName = `calculadora_diaria_mensual_${currentDate}.xlsx`;
+          message = `✅ Resumen mensual exportado exitosamente.\n\nArchivo: ${fileName}`;
+        }
+        
+        saveAs(blob, fileName);
+        alert(message);
+      });
+
+    } catch (error) {
+      console.error('Error al exportar a Excel:', error);
+      alert('❌ Error al exportar los datos a Excel. Por favor, intenta nuevamente.');
+    }
+  };
+
+  // ===================== FUNCIÓN PARA EXPORTAR MES ESPECÍFICO A EXCEL =====================
+  const exportMonthToExcel = (monthKey) => {
+    try {
+      const monthData = monthlyData[monthKey];
+      
+      if (!monthData) {
+        alert(`ℹ️ No hay datos consolidados para el mes ${monthKey}.`);
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Calculadora Diaria App';
+      workbook.created = new Date();
+
+      // Hoja 1: Resumen del mes
+      const summarySheet = workbook.addWorksheet('Resumen del Mes');
+      
+      summarySheet.getColumn(1).width = 25;
+      summarySheet.getColumn(2).width = 25;
+
+      const titleRow = summarySheet.addRow([`REPORTE DEL MES ${monthKey}`]);
+      titleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
+      titleRow.alignment = { horizontal: 'center' };
+      summarySheet.mergeCells('A1:B1');
+
+      summarySheet.addRow(['Mes:', monthKey]);
+      summarySheet.addRow(['Días registrados:', monthData.informacionConsolidada?.diasTotales || 0]);
+      summarySheet.addRow(['Primer día:', monthData.informacionConsolidada?.primerDia || 'N/A']);
+      summarySheet.addRow(['Último día:', monthData.informacionConsolidada?.ultimoDia || 'N/A']);
+      summarySheet.addRow(['Fecha de consolidación:', 
+        monthData.fechaConsolidacion 
+          ? new Date(monthData.fechaConsolidacion).toLocaleDateString('es-CO')
+          : 'N/A'
+      ]);
+      summarySheet.addRow([]);
+
+      // Totales por día
+      const totalesHeader = summarySheet.addRow(['TOTALES POR DÍA', '']);
+      totalesHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
+      totalesHeader.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '2E75B6' }
+      };
+      summarySheet.mergeCells('A8:B8');
+
+      const totalPaso1 = monthData.totalesPorDia?.paso1 || monthData.acumuladoGeneral?.paso1 || 0;
+      const totalPaso2 = monthData.totalesPorDia?.paso2 || monthData.acumuladoGeneral?.paso2 || 0;
+      const totalGeneral = monthData.totalesPorDia?.general || (totalPaso1 + totalPaso2);
+
+      summarySheet.addRow(['Total Paso 1:', totalPaso1]);
+      summarySheet.addRow(['Total Paso 2:', totalPaso2]);
+      summarySheet.addRow(['Total General:', totalGeneral]);
+      summarySheet.addRow([]);
+
+      // Acumulados finales
+      const acumuladosHeader = summarySheet.addRow(['ACUMULADOS FINALES', '']);
+      acumuladosHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
+      acumuladosHeader.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '70AD47' }
+      };
+      summarySheet.mergeCells('A13:B13');
+
+      const acumuladoPaso1 = monthData.acumuladoGeneral?.paso1 || totalPaso1;
+      const acumuladoPaso2 = monthData.acumuladoGeneral?.paso2 || totalPaso2;
+      const acumuladoTotal = monthData.acumuladoGeneral?.total || (acumuladoPaso1 + acumuladoPaso2);
+      const porcentajeFinal = monthData.porcentajeFinal || 0;
+
+      summarySheet.addRow(['Acumulado Paso 1:', acumuladoPaso1]);
+      summarySheet.addRow(['Acumulado Paso 2:', acumuladoPaso2]);
+      summarySheet.addRow(['Acumulado Total:', acumuladoTotal]);
+      summarySheet.addRow(['Porcentaje final:', porcentajeFinal / 100]);
+
+      // Formato de números
+      [2, 3, 4, 5, 6, 9, 10, 11, 14, 15, 16].forEach(row => {
+        const cell = summarySheet.getCell(`B${row}`);
+        cell.numFmt = '#,##0';
+      });
+
+      // Formato porcentaje
+      const porcentajeCell = summarySheet.getCell('B17');
+      porcentajeCell.numFmt = '0.00%';
+
+      // Generar el archivo
+      workbook.xlsx.writeBuffer().then(buffer => {
+        const blob = new Blob([buffer], { 
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        
+        const fileName = `mes_${monthKey}_reporte.xlsx`;
+        saveAs(blob, fileName);
+        
+        alert(`✅ Mes ${monthKey} exportado a Excel exitosamente.\n\nArchivo: ${fileName}`);
+      });
+
+    } catch (error) {
+      console.error('Error al exportar mes a Excel:', error);
+      alert('❌ Error al exportar el mes a Excel.');
+    }
+  };
 
   // ===================== DETECCIÓN DE CAMBIO DE MES =====================
   useEffect(() => {
@@ -72,21 +717,17 @@ const App = () => {
       const year = today.getFullYear();
       const month = today.getMonth() + 1;
       
-      // Verificar si es último día del mes
       const lastDayOfMonth = new Date(year, month, 0).getDate();
       const isLastDay = today.getDate() === lastDayOfMonth;
       setIsLastDayOfMonth(isLastDay);
       
-      // Verificar cambio de mes
       const newMonth = `${year}-${month.toString().padStart(2, '0')}`;
       
       if (newMonth !== currentMonth) {
         console.log(`🔄 ¡Cambió el mes! De ${currentMonth} a ${newMonth}`);
         
-        // Actualizar el mes actual
         setCurrentMonth(newMonth);
         
-        // Resetear acumulados para el nuevo mes
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
@@ -99,21 +740,18 @@ const App = () => {
         setCompletedSteps({ paso1: false, paso2: false });
         setCurrentView('paso1');
         
-        // Mostrar mensaje informativo
-        alert(`📅 ¡Nuevo mes comenzado! (${newMonth})\n\nLos acumulados se han reiniciado a CERO.\nPuedes comenzar a registrar datos del nuevo mes.\n\n💡 El mes anterior (${currentMonth}) sigue disponible para exportar manualmente desde el historial.`);
+        alert(`📅 ¡Nuevo mes comenzado! (${newMonth})\n\nLos acumulados se han reiniciado a CERO.\nPuedes comenzar a registrar datos del nuevo mes.\n\n💡 El mes anterior (${currentMonth}) sigue disponible para exportar desde el historial.`);
       }
     };
     
-    // Ejecutar al cargar y cada minuto para detectar cambios de mes
     checkMonthAndLastDay();
-    const interval = setInterval(checkMonthAndLastDay, 60000); // Verificar cada minuto
+    const interval = setInterval(checkMonthAndLastDay, 60000);
     
     return () => clearInterval(interval);
   }, [currentDate, currentMonth]);
 
   // ===================== FUNCIÓN MEJORADA: RESETEAR MES ACTUAL =====================
   const resetCurrentMonth = async () => {
-    // Mostrar confirmación específica para el mes actual
     const confirmReset = window.confirm(
       `⚠️ ¿REINICIAR MES ${currentMonth}?\n\n` +
       `Esta acción eliminará SOLO los datos del mes ${currentMonth}:\n` +
@@ -121,7 +759,6 @@ const App = () => {
       `• Los acumulados actuales de ${currentMonth}\n\n` +
       '🚫 NO se eliminarán:\n' +
       '• Meses anteriores (quedan en historial)\n' +
-      '• JSONs de meses completados\n' +
       '• Resúmenes mensuales anteriores\n\n' +
       'Después del reinicio:\n' +
       `• Comenzarás ${currentMonth} desde CERO\n` +
@@ -130,32 +767,26 @@ const App = () => {
       '¿Continuar?'
     );
 
-    if (!confirmReset) {
-      return; // El usuario canceló
-    }
+    if (!confirmReset) return;
 
     try {
       setLoading(true);
       setCloudStatus(`🔄 Reiniciando mes ${currentMonth}...`);
 
-      // 1. Eliminar SOLO datos del mes actual de Firebase
       if (user) {
         try {
-          // Buscar todos los días del mes actual en los datos históricos
           const monthDays = Object.keys(historicalData).filter(date => 
             date.startsWith(currentMonth)
           );
           
           console.log(`🗑️ Eliminando ${monthDays.length} días del mes ${currentMonth} de Firebase`);
           
-          // Eliminar cada día del mes actual de Firebase
           for (const date of monthDays) {
             await deleteFromFirebase('historicalData', date);
           }
           
           console.log(`✅ Datos del mes ${currentMonth} eliminados de Firebase`);
           
-          // También eliminar resumen mensual de este mes si existe
           if (monthlyData[currentMonth]) {
             await deleteFromFirebase('monthlyData', currentMonth);
             console.log(`✅ Resumen del mes ${currentMonth} eliminado de Firebase`);
@@ -166,7 +797,6 @@ const App = () => {
         }
       }
 
-      // 2. Filtrar datos históricos - mantener solo meses anteriores
       const newHistoricalData = {};
       Object.entries(historicalData).forEach(([date, data]) => {
         if (!date.startsWith(currentMonth)) {
@@ -175,7 +805,6 @@ const App = () => {
       });
       setHistoricalData(newHistoricalData);
 
-      // 3. Filtrar datos mensuales - mantener solo meses anteriores
       const newMonthlyData = {};
       Object.entries(monthlyData).forEach(([month, data]) => {
         if (month !== currentMonth) {
@@ -184,7 +813,6 @@ const App = () => {
       });
       setMonthlyData(newMonthlyData);
 
-      // 4. Resetear datos del día actual desde CERO
       setTodayData({
         date: currentDate,
         paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
@@ -192,27 +820,23 @@ const App = () => {
         porcentaje: 0
       });
       
-      // 5. Resetear estados del día actual
       setIsDayCompleted(false);
       setCompletedSteps({ paso1: false, paso2: false });
       setCurrentView('paso1');
       
-      // 6. Limpiar vistas temporales
       setSelectedDate(null);
       setIsEditing(false);
       setEditData(null);
 
-      // 7. Mostrar mensaje de éxito
       setCloudStatus(`✅ Mes ${currentMonth} reiniciado - Listo para comenzar`);
       
-      // Mensaje informativo
       alert(`✅ Mes ${currentMonth} reiniciado exitosamente\n\n` +
             `Los datos de ${currentMonth} han sido eliminados.\n` +
             `Ahora puedes registrar nuevos datos desde HOY.\n\n` +
             `📊 Los meses anteriores siguen disponibles en:\n` +
-            `• Historial de Meses (para ver resúmenes)\n` +
-            `• Calendario (para ver días específicos)\n` +
-            `• Exportar JSON (para backup)`);
+            `• Historial de Meses\n` +
+            `• Calendario\n` +
+            `• Exportar Excel`);
 
       setLoading(false);
 
@@ -224,68 +848,12 @@ const App = () => {
     }
   };
 
-  // ===================== FUNCIÓN NUEVA: EXPORTAR MES ANTERIOR =====================
-  const exportPreviousMonth = () => {
-    try {
-      const previousMonth = getPreviousMonth();
-      const monthData = monthlyData[previousMonth];
-      
-      if (!monthData) {
-        alert(`ℹ️ No hay datos consolidados para el mes ${previousMonth}.\n\nPuedes exportar los datos de los meses que hayan sido consolidados en la sección de exportación general.`);
-        return;
-      }
-      
-      const exportObj = {
-        fechaExportacion: new Date().toISOString(),
-        mes: previousMonth,
-        datosMensuales: monthData,
-        informacion: {
-          diasRegistrados: monthData.informacionConsolidada.diasTotales,
-          primerDia: monthData.informacionConsolidada.primerDia,
-          ultimoDia: monthData.informacionConsolidada.ultimoDia,
-          totalGeneral: formatCurrency(monthData.acumuladoGeneral.total),
-          porcentajeFinal: monthData.porcentajeFinal
-        }
-      };
-      
-      const dataStr = JSON.stringify(exportObj, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-      
-      const exportFileName = `mes-${previousMonth}-resumen.json`;
-      
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileName);
-      linkElement.click();
-      
-      alert(`📥 Mes ${previousMonth} exportado exitosamente.`);
-    } catch (error) {
-      console.error('Error exportando mes anterior:', error);
-      alert('❌ Error al exportar el mes anterior.');
-    }
-  };
-
-  // ===================== FUNCIÓN AUXILIAR: OBTENER MES ANTERIOR =====================
-  const getPreviousMonth = () => {
-    const [year, month] = currentMonth.split('-').map(Number);
-    let prevYear = year;
-    let prevMonth = month - 1;
-    
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear = year - 1;
-    }
-    
-    return `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
-  };
-
   // 🆕 Efecto para actualizar todayData cuando se carga historicalData
   useEffect(() => {
     if (!loading && historicalData[currentDate]) {
       console.log('🔄 Actualizando todayData con datos del día actual desde historicalData');
       const dayData = historicalData[currentDate];
       
-      // 🆕 CORRECCIÓN: Cargar TODOS los datos, no solo algunos
       setTodayData({
         date: currentDate,
         paso1: {
@@ -318,12 +886,10 @@ const App = () => {
     try {
       console.log('🔄 Verificando si el día actual está completado...', currentDate);
       
-      // Verificar primero en historicalData que ya se cargó
       if (historicalData && historicalData[currentDate]) {
         console.log('✅ Día actual encontrado en historicalData en memoria');
         const data = historicalData[currentDate];
         
-        // 🆕 CORRECCIÓN CRÍTICA: Cargar TODOS los datos en todayData
         setTodayData({
           date: currentDate,
           paso1: {
@@ -352,7 +918,6 @@ const App = () => {
         return true;
       }
 
-      // Si no está en memoria, verificar en Firebase
       if (user) {
         try {
           const docRef = doc(db, 'users', user.uid, 'historicalData', currentDate);
@@ -362,13 +927,11 @@ const App = () => {
             console.log('✅ Día actual encontrado en Firebase');
             const data = docSnap.data();
             
-            // Actualizar historicalData en memoria
             setHistoricalData(prev => ({
               ...prev,
               [currentDate]: data
             }));
             
-            // 🆕 CORRECCIÓN CRÍTICA: Cargar TODOS los datos en todayData
             setTodayData({
               date: currentDate,
               paso1: {
@@ -404,7 +967,6 @@ const App = () => {
       console.log('ℹ️ Día actual NO encontrado - listo para registrar');
       setIsDayCompleted(false);
       
-      // Cargar datos del día anterior del MISMO MES
       loadPreviousDayData();
       
       return false;
@@ -412,7 +974,6 @@ const App = () => {
       console.error('Error verificando día actual:', error);
       setIsDayCompleted(false);
       
-      // Intentar cargar datos del día anterior
       loadPreviousDayData();
       
       return false;
@@ -425,16 +986,13 @@ const App = () => {
       try {
         setLoading(true);
         
-        // 1. USAR SIEMPRE EL MISMO USUARIO ID (el que tiene tus datos)
         const FIXED_USER_ID = 'bEY1p1kgVjgk88AlCGa7nM6I1de2';
         
         try {
-          // Crear objeto de usuario simulado con el ID fijo
           const fixedUser = { uid: FIXED_USER_ID };
           setUser(fixedUser);
           setCloudStatus('✅ Conectado a la nube');
           
-          // 2. Cargar datos de Firebase con el ID fijo
           await loadDataFromFirebase(FIXED_USER_ID);
           
         } catch (firebaseError) {
@@ -442,7 +1000,6 @@ const App = () => {
           setCloudStatus('⚠️ Usando modo local');
         }
         
-        // 3. 🆕 Verificar si el día actual ya está guardado
         setTimeout(async () => {
           await checkIfTodayIsCompleted();
           setLoading(false);
@@ -471,7 +1028,6 @@ const App = () => {
   // Función para cargar datos desde Firebase
   const loadDataFromFirebase = async (userId) => {
     try {
-      // Cargar datos históricos
       const historicalRef = collection(db, 'users', userId, 'historicalData');
       const historicalSnapshot = await getDocs(historicalRef);
       
@@ -480,7 +1036,6 @@ const App = () => {
         historical[doc.id] = doc.data();
       });
       
-      // Cargar datos mensuales
       const monthlyRef = collection(db, 'users', userId, 'monthlyData');
       const monthlySnapshot = await getDocs(monthlyRef);
       
@@ -489,7 +1044,6 @@ const App = () => {
         monthly[doc.id] = doc.data();
       });
       
-      // Actualizar estados
       setHistoricalData(historical);
       setMonthlyData(monthly);
       
@@ -542,14 +1096,12 @@ const App = () => {
       
       if (monthDays.length === 0) return;
       
-      // Ordenar los días cronológicamente
       monthDays.sort((a, b) => a[0].localeCompare(b[0]));
       
       let totalDiarioPaso1 = 0;
       let totalDiarioPaso2 = 0;
       const diasRegistrados = [];
       
-      // Obtener los últimos acumulados (los del último día del mes)
       const ultimoDia = monthDays[monthDays.length - 1];
       const acumuladoFinalPaso1 = ultimoDia[1].paso1.acumulado;
       const acumuladoFinalPaso2 = ultimoDia[1].paso2.acumulado;
@@ -582,7 +1134,6 @@ const App = () => {
         ? (Math.min(acumuladoFinalPaso1, acumuladoFinalPaso2) / Math.max(acumuladoFinalPaso1, acumuladoFinalPaso2)) * 100 
         : 0;
       
-      // JSON consolidado
       const summary = {
         mes: monthKey,
         diasRegistrados: diasRegistrados,
@@ -605,7 +1156,6 @@ const App = () => {
         }
       };
       
-      // Guardar en Firebase (si hay conexión)
       if (user) {
         const firebaseSuccess = await saveToFirebase('monthlyData', monthKey, summary);
         if (firebaseSuccess) {
@@ -618,10 +1168,6 @@ const App = () => {
         [monthKey]: summary
       }));
       
-      // No eliminar días del mes de Firebase (queda para historial)
-      // Los datos permanecen en historicalData para referencia histórica
-      
-      // Mostrar notificación
       alert(`📅 ¡Mes ${monthKey} consolidado!\nSe han registrado ${summary.informacionConsolidada.diasTotales} días.\n\n💡 Los datos diarios permanecen en Firebase para historial.\nPuedes exportar el resumen desde el historial de meses.`);
       
     } catch (error) {
@@ -642,10 +1188,9 @@ const App = () => {
     try {
       console.log('🔄 Cargando datos del día anterior del mes actual...');
       
-      // Buscar el último día con datos del MISMO MES (excluyendo hoy)
       const diasDelMes = Object.entries(historicalData)
         .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
-        .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)); // Orden descendente
+        .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
       
       console.log('Días disponibles del mes actual:', diasDelMes.map(([date]) => date));
       
@@ -653,11 +1198,9 @@ const App = () => {
         const [fechaAnterior, datosAnterior] = diasDelMes[0];
         console.log('📅 Último día del mes con datos:', fechaAnterior);
         
-        // 🆕 Obtener el TOTAL del día anterior (suma de dato1 + dato2)
         const totalDiaAnteriorPaso1 = datosAnterior.paso1.total || 0;
         const totalDiaAnteriorPaso2 = datosAnterior.paso2.total || 0;
         
-        // 🆕 Cargar datos con totalDiaAnterior
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
@@ -667,7 +1210,7 @@ const App = () => {
             total: 0,
             acumuladoAnterior: datosAnterior.paso1.acumulado || 0,
             acumulado: datosAnterior.paso1.acumulado || 0,
-            totalDiaAnterior: totalDiaAnteriorPaso1  // 🆕 ESTE ES EL QUE SE MUESTRA EN EL MENSAJE AMARILLO
+            totalDiaAnterior: totalDiaAnteriorPaso1
           },
           paso2: {
             dato1: '',
@@ -675,7 +1218,7 @@ const App = () => {
             total: 0,
             acumuladoAnterior: datosAnterior.paso2.acumulado || 0,
             acumulado: datosAnterior.paso2.acumulado || 0,
-            totalDiaAnterior: totalDiaAnteriorPaso2  // 🆕 ESTE ES EL QUE SE MUESTRA EN EL MENSAJE AMARILLO
+            totalDiaAnterior: totalDiaAnteriorPaso2
           },
           porcentaje: 0
         }));
@@ -739,35 +1282,29 @@ const App = () => {
   const corregirAcumuladosErroneos = () => {
     const diasCorregidos = [];
     
-    // Obtener todos los días del mes actual ordenados
     const diasDelMes = Object.entries(historicalData)
       .filter(([date]) => date.startsWith(currentMonth))
-      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB)); // Orden ascendente
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
     
     if (diasDelMes.length <= 1) return diasCorregidos;
     
     let acumuladoCorrectoPaso1 = 0;
     let acumuladoCorrectoPaso2 = 0;
     
-    // Recalcular acumulados día por día
     for (let i = 0; i < diasDelMes.length; i++) {
       const [fecha, datos] = diasDelMes[i];
       
-      // El acumulado anterior debe ser el acumulado del día anterior (si existe)
       const acumuladoAnteriorCorrectoPaso1 = i > 0 ? diasDelMes[i-1][1].paso1.acumulado : 0;
       const acumuladoAnteriorCorrectoPaso2 = i > 0 ? diasDelMes[i-1][1].paso2.acumulado : 0;
       
-      // Calcular acumulado correcto
       const acumuladoCorrectoPaso1 = acumuladoAnteriorCorrectoPaso1 + datos.paso1.total;
       const acumuladoCorrectoPaso2 = acumuladoAnteriorCorrectoPaso2 + datos.paso2.total;
       
-      // Verificar si hay discrepancias
       if (datos.paso1.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso1 || 
           datos.paso1.acumulado !== acumuladoCorrectoPaso1 ||
           datos.paso2.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso2 || 
           datos.paso2.acumulado !== acumuladoCorrectoPaso2) {
         
-        // Crear versión corregida
         const datosCorregidos = {
           ...datos,
           paso1: {
@@ -782,7 +1319,6 @@ const App = () => {
           }
         };
         
-        // 🆕 IMPORTANTE: Recalcular porcentaje DEL DÍA (con totales del día)
         const totalPaso1 = datos.paso1.total;
         const totalPaso2 = datos.paso2.total;
         if (totalPaso1 > 0 && totalPaso2 > 0) {
@@ -791,13 +1327,11 @@ const App = () => {
           datosCorregidos.porcentaje = (menor / mayor) * 100;
         }
         
-        // Actualizar historicalData
         setHistoricalData(prev => ({
           ...prev,
           [fecha]: datosCorregidos
         }));
         
-        // Guardar en Firebase
         if (user) {
           saveToFirebase('historicalData', fecha, datosCorregidos);
         }
@@ -819,7 +1353,6 @@ const App = () => {
     if (!loading && Object.keys(historicalData).length > 0) {
       const diasCorregidos = corregirAcumuladosErroneos();
       if (diasCorregidos.length > 0 && diasCorregidos.includes(currentDate)) {
-        // Si se corrigió el día actual, actualizar todayData
         const datosActualizados = historicalData[currentDate];
         if (datosActualizados) {
           setTodayData(datosActualizados);
@@ -857,7 +1390,6 @@ const App = () => {
 
       newData[paso].total = dato1 + dato2;
       
-      // Acumulado = acumulado anterior + total del día
       newData[paso].acumulado = newData[paso].acumuladoAnterior + newData[paso].total;
 
       return newData;
@@ -903,7 +1435,6 @@ const App = () => {
       newData[paso].total = dato1 + dato2;
       newData[paso].acumulado = newData[paso].acumuladoAnterior + newData[paso].total;
       
-      // 🆕 CORRECCIÓN: Recalcular porcentaje DEL DÍA (con totales del día)
       const totalPaso1 = newData.paso1.total;
       const totalPaso2 = newData.paso2.total;
       if (totalPaso1 > 0 && totalPaso2 > 0) {
@@ -947,7 +1478,6 @@ const App = () => {
     try {
       console.log('💾 Guardando datos para el día:', currentDate);
       
-      // 🆕 Mostrar advertencia si es último día del mes
       if (isLastDayOfMonth) {
         const confirmSave = window.confirm(
           '📅 ¡ÚLTIMO DÍA DEL MES!\n\n' +
@@ -963,16 +1493,14 @@ const App = () => {
         }
       }
       
-      // 🆕 CORRECCIÓN CRÍTICA: Buscar el acumulado anterior del ÚLTIMO DÍA registrado del MISMO MES
       const diasDelMes = Object.entries(historicalData)
         .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
-        .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)); // Orden descendente
+        .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
       
       let acumuladoAnteriorPaso1 = 0;
       let acumuladoAnteriorPaso2 = 0;
       
       if (diasDelMes.length > 0) {
-        // Tomar el día más reciente (último día con datos)
         const ultimoDia = diasDelMes[0][1];
         acumuladoAnteriorPaso1 = ultimoDia.paso1.acumulado || 0;
         acumuladoAnteriorPaso2 = ultimoDia.paso2.acumulado || 0;
@@ -985,17 +1513,14 @@ const App = () => {
         console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
       }
       
-      // Calcular los nuevos acumulados CORRECTAMENTE
       const totalDiaPaso1 = parseFloat(todayData.paso1.dato1 || 0) + parseFloat(todayData.paso1.dato2 || 0);
       const totalDiaPaso2 = parseFloat(todayData.paso2.dato1 || 0) + parseFloat(todayData.paso2.dato2 || 0);
       
       const nuevoAcumuladoPaso1 = acumuladoAnteriorPaso1 + totalDiaPaso1;
       const nuevoAcumuladoPaso2 = acumuladoAnteriorPaso2 + totalDiaPaso2;
       
-      // 🆕 CALCULAR PORCENTAJE DEL DÍA (con totales del día)
       let porcentajeDia = calculateDayPercentage();
       
-      // Crear objeto con datos CORREGIDOS
       const datosDia = {
         date: currentDate,
         paso1: {
@@ -1004,7 +1529,7 @@ const App = () => {
           total: totalDiaPaso1,
           acumuladoAnterior: acumuladoAnteriorPaso1,
           acumulado: nuevoAcumuladoPaso1,
-          totalDiaAnterior: todayData.paso1.totalDiaAnterior || 0  // 🆕 Guardar totalDiaAnterior
+          totalDiaAnterior: todayData.paso1.totalDiaAnterior || 0
         },
         paso2: {
           dato1: todayData.paso2.dato1 || '',
@@ -1012,14 +1537,13 @@ const App = () => {
           total: totalDiaPaso2,
           acumuladoAnterior: acumuladoAnteriorPaso2,
           acumulado: nuevoAcumuladoPaso2,
-          totalDiaAnterior: todayData.paso2.totalDiaAnterior || 0  // 🆕 Guardar totalDiaAnterior
+          totalDiaAnterior: todayData.paso2.totalDiaAnterior || 0
         },
-        porcentaje: porcentajeDia  // ← ¡PORCENTAJE DEL DÍA!
+        porcentaje: porcentajeDia
       };
       
       console.log('💾 Guardando datos CORREGIDOS:', datosDia);
       
-      // Actualizar historicalData
       const nuevosHistoricalData = {
         ...historicalData,
         [currentDate]: datosDia
@@ -1028,13 +1552,11 @@ const App = () => {
       setHistoricalData(nuevosHistoricalData);
       setTodayData(datosDia);
       
-      // Guardar en Firebase
       if (user) {
         const exito = await saveToFirebase('historicalData', currentDate, datosDia);
         setCloudStatus(exito ? '💾 Guardado en la nube' : '💾 Guardado localmente');
       }
       
-      // Marcar como completado
       setIsDayCompleted(true);
       setCompletedSteps({ paso1: true, paso2: true });
       setCurrentView('resumen');
@@ -1064,13 +1586,11 @@ const App = () => {
       
       setHistoricalData(newHistoricalData);
       
-      // Guardar en Firebase (si hay conexión)
       if (user) {
         await saveToFirebase('historicalData', editData.date, editData);
         setCloudStatus('💾 Cambios guardados en la nube');
       }
       
-      // 🆕 Si se editó el día actual, actualizar todayData
       if (editData.date === currentDate) {
         setTodayData(editData);
       }
@@ -1096,176 +1616,6 @@ const App = () => {
   const viewHistoricalData = (date) => {
     setSelectedDate(date);
     setShowCalendar(false);
-  };
-
-  // Exportar datos a JSON
-  const exportData = () => {
-    try {
-      const exportObj = {
-        fechaExportacion: new Date().toISOString(),
-        datosDiarios: historicalData,
-        resumenesMensuales: monthlyData,
-        informacion: {
-          totalDiasRegistrados: Object.keys(historicalData).length,
-          totalMesesConsolidados: Object.keys(monthlyData).length,
-          ultimaActualizacion: new Date().toISOString(),
-          usuarioId: user?.uid || 'local'
-        }
-      };
-      
-      const dataStr = JSON.stringify(exportObj, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-      
-      const exportFileDefaultName = `calculadora-diaria-backup-${currentDate}.json`;
-      
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileDefaultName);
-      linkElement.click();
-      
-      alert('📥 Datos exportados exitosamente.');
-    } catch (error) {
-      console.error('Error exporting data:', error);
-      alert('❌ Error al exportar los datos.');
-    }
-  };
-
-  // Importar datos desde JSON - VERSIÓN CORREGIDA
-  const importData = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-      try {
-        const importedData = JSON.parse(e.target.result);
-        
-        let newHistoricalData = {};
-        let newMonthlyData = {};
-        
-        if (importedData.datosDiarios) {
-          newHistoricalData = importedData.datosDiarios;
-          setHistoricalData(newHistoricalData);
-          
-          // Guardar en Firebase si hay usuario
-          if (user) {
-            for (const [date, data] of Object.entries(newHistoricalData)) {
-              await saveToFirebase('historicalData', date, data);
-            }
-          }
-        }
-        
-        if (importedData.resumenesMensuales) {
-          newMonthlyData = importedData.resumenesMensuales;
-          setMonthlyData(newMonthlyData);
-          
-          // Guardar en Firebase si hay usuario
-          if (user) {
-            for (const [month, data] of Object.entries(newMonthlyData)) {
-              await saveToFirebase('monthlyData', month, data);
-            }
-          }
-        }
-        
-        // 🆕 CRÍTICO: Después de importar, verificar si el día actual está en los datos importados
-        if (newHistoricalData[currentDate]) {
-          console.log('✅ Día actual encontrado en datos importados');
-          
-          // Cargar los datos del día actual
-          const todayImportedData = newHistoricalData[currentDate];
-          
-          // Asegurarse de que todos los campos estén presentes
-          const completeDayData = {
-            ...todayImportedData,
-            paso1: {
-              dato1: todayImportedData.paso1.dato1 || '',
-              dato2: todayImportedData.paso1.dato2 || '',
-              total: todayImportedData.paso1.total || 0,
-              acumuladoAnterior: todayImportedData.paso1.acumuladoAnterior || 0,
-              acumulado: todayImportedData.paso1.acumulado || 0,
-              totalDiaAnterior: todayImportedData.paso1.totalDiaAnterior || 0
-            },
-            paso2: {
-              dato1: todayImportedData.paso2.dato1 || '',
-              dato2: todayImportedData.paso2.dato2 || '',
-              total: todayImportedData.paso2.total || 0,
-              acumuladoAnterior: todayImportedData.paso2.acumuladoAnterior || 0,
-              acumulado: todayImportedData.paso2.acumulado || 0,
-              totalDiaAnterior: todayImportedData.paso2.totalDiaAnterior || 0
-            }
-          };
-          
-          // ACTUALIZAR EL ESTADO todayData CON LOS DATOS IMPORTADOS
-          setTodayData(completeDayData);
-          
-          // Marcar como día completado
-          setIsDayCompleted(true);
-          
-          // Marcar pasos como completados
-          setCompletedSteps({ paso1: true, paso2: true });
-          
-          // Ir a la vista de resumen para mostrar los datos
-          setCurrentView('resumen');
-          
-          // Actualizar cloud status
-          setCloudStatus('💾 Datos importados y cargados');
-          
-          // Mostrar mensaje específico
-          alert(`✅ Datos importados exitosamente.\n\nSe encontraron datos para hoy (${currentDate}).\nLos datos del día actual se han cargado en modo solo lectura.`);
-        } else {
-          console.log('ℹ️ Día actual NO encontrado en datos importados');
-          
-          // Si no hay datos para hoy, cargar datos del día anterior (si existen)
-          if (Object.keys(newHistoricalData).length > 0) {
-            // Obtener la fecha más reciente de los datos importados
-            const dates = Object.keys(newHistoricalData).sort();
-            const lastDate = dates[dates.length - 1];
-            
-            if (lastDate < currentDate) {
-              // Si la última fecha importada es anterior a hoy, cargar acumulados
-              const lastData = newHistoricalData[lastDate];
-              
-              setTodayData(prev => ({
-                ...prev,
-                date: currentDate,
-                paso1: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso1.acumulado,
-                  acumulado: lastData.paso1.acumulado,
-                  totalDiaAnterior: lastData.paso1.total
-                },
-                paso2: {
-                  dato1: '',
-                  dato2: '',
-                  total: 0,
-                  acumuladoAnterior: lastData.paso2.acumulado,
-                  acumulado: lastData.paso2.acumulado,
-                  totalDiaAnterior: lastData.paso2.total
-                },
-                porcentaje: 0
-              }));
-              
-              alert(`📊 Datos importados exitosamente.\n\nÚltimo día registrado: ${lastDate}\nSe han cargado los acumulados para continuar desde hoy.`);
-            }
-          }
-          
-          // Resetear pasos
-          setCompletedSteps({ paso1: false, paso2: false });
-          setCurrentView('paso1');
-          setCloudStatus('💾 Datos importados - Listo para continuar');
-        }
-        
-      } catch (error) {
-        console.error('Error importing data:', error);
-        setCloudStatus('❌ Error al importar');
-        alert('❌ Error al importar los datos. Verifica el formato del archivo.');
-      }
-    };
-    
-    reader.readAsText(file);
   };
 
   // Generar días del mes para el calendario
@@ -1318,7 +1668,6 @@ const App = () => {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">📊 Historial de Meses</h2>
           <div className="flex space-x-2">
-       
             <button
               onClick={() => setShowMonthlyHistory(false)}
               className="text-gray-500 hover:text-gray-700 text-2xl"
@@ -1332,117 +1681,115 @@ const App = () => {
           <p className="text-gray-500 text-center py-8">No hay meses completados aún</p>
         ) : (
           <div className="space-y-6">
-            {months.map(([monthKey, data]) => (
-              <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-lg text-purple-900">
-                    {new Date(monthKey + '-01').toLocaleDateString('es-CO', { 
-                      month: 'long', 
-                      year: 'numeric' 
-                    })}
-                  </h3>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => {
-                        // Función para exportar un mes específico
-                        const exportObj = {
-                          fechaExportacion: new Date().toISOString(),
-                          mes: monthKey,
-                          datosMensuales: data,
-                          informacion: {
-                            diasRegistrados: data.informacionConsolidada.diasTotales,
-                            totalGeneral: formatCurrency(data.acumuladoGeneral.total),
-                            porcentajeFinal: data.porcentajeFinal
-                          }
-                        };
-                        
-                        const jsonStr = JSON.stringify(exportObj, null, 2);
-                        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
-                        const exportFileName = `mes-${monthKey}-resumen.json`;
-                        
-                        const linkElement = document.createElement('a');
-                        linkElement.setAttribute('href', dataUri);
-                        linkElement.setAttribute('download', exportFileName);
-                        linkElement.click();
-                        
-                        alert(`📥 Mes ${monthKey} exportado exitosamente.`);
-                      }}
-                      className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
-                    >
-                      Exportar
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                  <div>
-                    <p className="text-gray-600">Días registrados:</p>
-                    <p className="font-bold text-lg">{data.informacionConsolidada.diasTotales}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Total Paso 1:</p>
-                    <p className="font-bold text-blue-900">{formatCurrency(data.totalesPorDia.paso1)}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Total Paso 2:</p>
-                    <p className="font-bold text-green-900">{formatCurrency(data.totalesPorDia.paso2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Total General:</p>
-                    <p className="font-bold text-purple-900 text-lg">{formatCurrency(data.totalesPorDia.general)}</p>
-                  </div>
-                </div>
-                
-                <div className="border-t pt-3 mt-3">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-gray-600">Acumulado Paso 1:</p>
-                      <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral.paso1)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Acumulado Paso 2:</p>
-                      <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral.paso2)}</p>
+            {months.map(([monthKey, data]) => {
+              if (!data) return null;
+              
+              const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+              const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+              const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+              const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
+              const porcentaje = data.porcentajeFinal || 0;
+
+              return (
+                <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-bold text-lg text-purple-900">
+                      {new Date(monthKey + '-01').toLocaleDateString('es-CO', { 
+                        month: 'long', 
+                        year: 'numeric' 
+                      })}
+                    </h3>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => exportMonthToExcel(monthKey)}
+                        className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
+                      >
+                        Exportar mes
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-3 text-center">
-                    <p className="text-gray-600">Porcentaje final:</p>
-                    <p className="font-bold text-2xl text-purple-900">{data.porcentajeFinal}%</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                    <div>
+                      <p className="text-gray-600">Días registrados:</p>
+                      <p className="font-bold text-lg">{diasTotales}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Total Paso 1:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(totalPaso1)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Total Paso 2:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(totalPaso2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Total General:</p>
+                      <p className="font-bold text-purple-900 text-lg">{formatCurrency(totalGeneral)}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-3 mt-3">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-gray-600">Acumulado Paso 1:</p>
+                        <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral?.paso1 || totalPaso1)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600">Acumulado Paso 2:</p>
+                        <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral?.paso2 || totalPaso2)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-center">
+                      <p className="text-gray-600">Porcentaje final:</p>
+                      <p className="font-bold text-2xl text-purple-900">{porcentaje.toFixed(2)}%</p>
+                    </div>
                   </div>
                 </div>
-                
-                <div className="mt-4 text-xs text-gray-500">
-                  <p>📅 {new Date(data.fechaConsolidacion).toLocaleDateString('es-CO', { 
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         
         <div className="mt-6 space-y-4">
-          {/* ===================== SECCIÓN: EXPORTAR MES ANTERIOR ===================== */}
-          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
-            <h4 className="font-bold text-yellow-900 mb-2">📤 Exportar Mes Anterior</h4>
-            <p className="text-sm text-yellow-800 mb-3">
-              Exporta el resumen del mes anterior ({getPreviousMonth()}) como archivo JSON.
-              Los datos diarios permanecen en Firebase para historial.
-            </p>
-            <button
-              onClick={exportPreviousMonth}
-              className="w-full bg-yellow-500 text-white py-3 rounded-lg font-semibold hover:bg-yellow-600 transition-colors flex items-center justify-center space-x-2"
-            >
-              <Download size={20} />
-              <span>EXPORTAR MES ANTERIOR ({getPreviousMonth()})</span>
-            </button>
+          <div className="bg-gradient-to-r from-green-50 to-teal-50 border-l-4 border-green-500 p-4 rounded-lg">
+            <h4 className="font-bold text-green-900 mb-3 text-lg">📤 Exportar Reportes</h4>
+            
+            <div className="space-y-2">
+              <button
+                onClick={() => exportToExcel('full')}
+                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR REPORTE DIARIO</span>
+              </button>
+              
+              <button
+                onClick={() => exportToExcel('daily')}
+                className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR DETALLE MENSUAL</span>
+              </button>
+
+              <button
+                onClick={() => exportToExcel('monthly')}
+                className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR RESÚMENES MENSUALES</span>
+              </button>
+
+              {/* NUEVO BOTÓN PARA EXPORTAR JSON */}
+              <button
+                onClick={exportAllDataToJSON}
+                className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR BACKUP (JSON)</span>
+              </button>
+            </div>
           </div>
           
-          {/* ===================== SECCIÓN MEJORADA: REINICIAR MES ACTUAL ===================== */}
           <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
             <h4 className="font-bold text-red-900 mb-2">⚠️ Reiniciar mes actual</h4>
             <p className="text-sm text-red-700 mb-2">
@@ -1457,8 +1804,6 @@ const App = () => {
               <br/>
               • Meses anteriores (quedan en historial)
               <br/>
-              • JSONs de meses completados
-              <br/>
               • Resúmenes mensuales anteriores
             </p>
             <button
@@ -1472,43 +1817,31 @@ const App = () => {
               ⚠️ Esta acción NO se puede deshacer para el mes actual
             </p>
           </div>
-          {/* ===================== FIN SECCIÓN REINICIAR MES ACTUAL ===================== */}
           
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-bold text-blue-900 mb-2">📤 Importar/Exportar Datos</h4>
+            <h4 className="font-bold text-blue-900 mb-2">📤 Importar Datos</h4>
             <div className="flex space-x-4">
-              <button
-                onClick={exportData}
-                className="flex-1 bg-green-500 text-white py-2 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={18} />
-                <span>Exportar Todo</span>
-              </button>
               <label className="relative group flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
-                <span>📥 Importar</span>
+                <span>📥 Importar desde JSON</span>
                 <input
                   type="file"
-                  accept=".json"
+                  accept=".json,.txt"
                   onChange={importData}
                   className="hidden"
                 />
-                <div className="absolute invisible group-hover:visible bg-gray-800 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-                  Importa datos exportados previamente
-                </div>
               </label>
             </div>
             <p className="text-xs text-gray-600 mt-2 text-center">
-              💡 Si importas datos que incluyen el día actual, se cargarán automáticamente
+              💡 Solo archivos JSON exportados desde esta aplicación
             </p>
           </div>
           
           <div className="text-sm text-gray-500">
-            <p>💡 Cada mes se genera automáticamente un JSON consolidado con:</p>
+            <p>📈 <strong>Estadísticas actuales:</strong></p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Mes y días registrados</li>
-              <li>Totales por día de cada paso</li>
-              <li>Acumulado general del mes</li>
-              <li>Porcentaje final comparativo</li>
+              <li>Meses completados: {Object.keys(monthlyData).length}</li>
+              <li>Días registrados totales: {Object.keys(historicalData).length}</li>
+              <li>Último mes: {currentMonth}</li>
             </ul>
             <p className="mt-3">☁️ {cloudStatus}</p>
           </div>
@@ -1603,7 +1936,6 @@ const App = () => {
   const renderHistoricalView = () => {
     const data = editData || historicalData[selectedDate];
     
-    // Calcular acumulado del mes hasta la fecha seleccionada
     const calculateMonthAccumulated = () => {
       const monthKey = selectedDate.slice(0, 7);
       const monthDays = Object.entries(historicalData)
@@ -1617,7 +1949,6 @@ const App = () => {
       const acum2 = lastDay.paso2.acumulado;
       const total = acum1 + acum2;
       
-      // Calcular porcentaje del mes: menor acumulado sobre mayor acumulado
       let porcentaje = 0;
       if (acum1 > 0 && acum2 > 0) {
         const menor = Math.min(acum1, acum2);
@@ -1628,7 +1959,6 @@ const App = () => {
       return { paso1: acum1, paso2: acum2, total, porcentaje };
     };
     
-    // Calcular porcentaje del día
     const calculateDayPercentage = () => {
       const totalPaso1 = data.paso1.total || 0;
       const totalPaso2 = data.paso2.total || 0;
@@ -1648,7 +1978,6 @@ const App = () => {
     
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
-        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">
             {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
@@ -1671,10 +2000,7 @@ const App = () => {
         </div>
 
         <div className="space-y-6">
-
-          {/* Sección de Porcentajes */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Porcentaje del DÍA */}
             <div className="border rounded-lg p-4 bg-amber-50 border-amber-200">
               <h3 className="font-bold text-lg mb-3 text-amber-900">Porcentaje del DÍA</h3>
               <div className="space-y-2 text-amber-600">
@@ -1684,7 +2010,6 @@ const App = () => {
               </div>
             </div>
 
-            {/* Porcentaje del MES */}
             <div className="border rounded-lg p-4 bg-purple-50 border-purple-200">
               <h3 className="font-bold text-lg mb-3 text-purple-900">Porcentaje del MES</h3>
               <div className="space-y-2 text-purple-900">
@@ -1695,9 +2020,7 @@ const App = () => {
             </div>
           </div>
 
-          {/* Pasos 1 y 2 lado a lado */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Paso 1 */}
             <div className="border rounded-lg p-4 bg-blue-50">
               <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
               {isEditing ? (
@@ -1747,7 +2070,6 @@ const App = () => {
               )}
             </div>
 
-            {/* Paso 2 */}
             <div className="border rounded-lg p-4 bg-green-50">
               <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
               {isEditing ? (
@@ -1798,7 +2120,6 @@ const App = () => {
             </div>
           </div>
 
-          {/* Resumen comparativo */}
           <div className="border rounded-lg p-4 bg-gray-50">
             <h3 className="font-bold text-lg mb-3 text-gray-900">Resumen Comparativo</h3>
             <div className="grid grid-cols-2 gap-4">
@@ -1818,7 +2139,6 @@ const App = () => {
           </div>
         </div>
 
-        {/* Botones de acción */}
         <div className="mt-6 space-y-3">
           {isEditing ? (
             <div className="flex space-x-3">
@@ -1908,7 +2228,6 @@ const App = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
           <div className="flex justify-between items-center">
             <div className="flex-1">
@@ -1921,7 +2240,6 @@ const App = () => {
                   day: 'numeric'
                 })}
               </p>
-              {/* 🆕 Mostrar información del mes */}
               <div className="mt-2 flex flex-wrap gap-2">
                 {isDayCompleted && (
                   <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm inline-flex items-center">
@@ -1948,11 +2266,11 @@ const App = () => {
                   {cloudStatus}
                 </span>
                 <button
-                  onClick={exportData}
+                  onClick={() => exportToExcel('full')}
                   className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full hover:bg-green-200 transition-colors flex items-center space-x-1"
                 >
                   <Download size={12} />
-                  <span>Exportar Datos</span>
+                  <span>Exportar a Excel</span>
                 </button>
               </div>
             </div>
@@ -1973,7 +2291,6 @@ const App = () => {
           </div>
         </div>
 
-        {/* 🆕 Mensaje de último día del mes */}
         {isLastDayOfMonth && !isDayCompleted && (
           <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4 rounded-lg">
             <div className="flex">
@@ -1985,9 +2302,7 @@ const App = () => {
                 <div className="mt-1 text-yellow-700">
                   <p className="font-semibold">📝 Puedes registrar datos normalmente hoy.</p>
                   <ul className="mt-1 text-sm list-disc list-inside space-y-1">
-                    <li>Mañana comenzará un nuevo mes automáticamente</li>
                     <li>Los acumulados se reiniciarán a CERO</li>
-                    <li>Los datos de este mes permanecerán en Firebase</li>
                     <li>Podrás exportar el resumen del mes desde el historial</li>
                   </ul>
                 </div>
@@ -1996,7 +2311,6 @@ const App = () => {
           </div>
         )}
 
-        {/* Navegación */}
         <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
           <div className="flex space-x-2">
             <button
@@ -2041,13 +2355,11 @@ const App = () => {
           </div>
         </div>
 
-        {/* Contenido */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           {currentView === 'paso1' && (
             <div>
               <h2 className="text-2xl font-bold text-blue-900 mb-6">Paso 1</h2>
               
-              {/* 🆕 Mensaje si el día ya está completado */}
               {isDayCompleted && (
                 <div className="bg-blue-100 border-l-4 border-blue-500 p-4 mb-4">
                   <p className="text-blue-800 font-semibold">
@@ -2059,7 +2371,6 @@ const App = () => {
                 </div>
               )}
               
-              {/* 🆕 CORRECCIÓN: Mostrar TOTAL DEL DÍA ANTERIOR en lugar de acumulado anterior */}
               {todayData.paso1.totalDiaAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
@@ -2069,7 +2380,6 @@ const App = () => {
               )}
               
               <div className="space-y-4">
-                {/* SIEMPRE mostrar datos REALES - usar historicalData cuando isDayCompleted = true */}
                 {isDayCompleted ? (
                   <div className="space-y-3">
                     <div className="bg-white p-4 rounded-lg border border-blue-200">
@@ -2095,7 +2405,6 @@ const App = () => {
                     </div>
                   </div>
                 ) : (
-                  /* MOSTRAR INPUTS NORMALES CUANDO NO ESTÁ COMPLETADO */
                   <>
                     <div>
                       <label className="block text-gray-700 font-semibold mb-2">Dato 1</label>
@@ -2166,7 +2475,6 @@ const App = () => {
             <div>
               <h2 className="text-2xl font-bold text-green-900 mb-6">Paso 2</h2>
 
-              {/* 🆕 Mensaje si el día ya está completado */}
               {isDayCompleted && (
                 <div className="bg-green-100 border-l-4 border-green-500 p-4 mb-4">
                   <p className="text-green-800 font-semibold">
@@ -2178,7 +2486,6 @@ const App = () => {
                 </div>
               )}
 
-              {/* 🆕 CORRECCIÓN: Mostrar TOTAL DEL DÍA ANTERIOR en lugar de acumulado anterior */}
               {todayData.paso2.totalDiaAnterior > 0 && !isDayCompleted && (
                 <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-4">
                   <p className="text-sm text-yellow-800">
@@ -2188,7 +2495,6 @@ const App = () => {
               )}
 
               <div className="space-y-4">
-                {/* SIEMPRE mostrar datos REALES - usar historicalData cuando isDayCompleted = true */}
                 {isDayCompleted ? (
                   <div className="space-y-3">
                     <div className="bg-white p-4 rounded-lg border border-green-200">
@@ -2214,7 +2520,6 @@ const App = () => {
                     </div>
                   </div>
                 ) : (
-                  /* MOSTRAR INPUTS NORMALES CUANDO NO ESTÁ COMPLETADO */
                   <>
                     <div>
                       <label className="block text-gray-700 font-semibold mb-2">Dato 1</label>
@@ -2284,7 +2589,6 @@ const App = () => {
             <div>
               <h2 className="text-2xl font-bold text-purple-900 mb-6">Resumen del Día</h2>
               
-              {/* 🆕 Mensaje si el día ya está completado */}
               {isDayCompleted && (
                 <div className="bg-purple-100 border-l-4 border-purple-500 p-4 mb-4">
                   <p className="text-purple-800 font-semibold">
@@ -2337,7 +2641,6 @@ const App = () => {
                   </p>
                 </div>
 
-                {/* 🆕 Total del día (suma de ambos pasos del día) */}
                 <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-200">
                   <h3 className="font-bold text-purple-900 text-lg mb-3">Total del Día</h3>
                   <p className="font-bold text-3xl text-purple-900">
@@ -2350,7 +2653,6 @@ const App = () => {
                   </p>
                   <div className="border-t-2 border-purple-300 pt-3 mt-3">
                     <p className="font-bold text-purple-900 text-2xl">
-                      {/* 🆕 CORRECCIÓN: Mostrar porcentaje DEL DÍA (ya calculado correctamente) */}
                       Porcentaje del día: {(
                         isDayCompleted && historicalData[currentDate] 
                           ? historicalData[currentDate].porcentaje 
@@ -2374,7 +2676,6 @@ const App = () => {
           )}
         </div>
 
-        {/* Footer */}
         <div className="mt-4 text-center text-sm text-gray-500">
           <p>💡 Cada nuevo mes los acumulados comienzan desde CERO. Los meses anteriores permanecen en Firebase para historial.</p>
           <p className="mt-1">☁️ {cloudStatus}</p>
