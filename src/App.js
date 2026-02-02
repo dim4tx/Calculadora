@@ -2228,23 +2228,6 @@ const exportMonthlySummaries = () => {
               </button>
               
               <button
-                onClick={() => exportToExcel('monthly')}
-                className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR RESUMEN MENSUAL</span>
-              </button>
-              
-              {/* NUEVO BOTÓN - Exportar solo meses registrados */}
-              <button
-                onClick={exportMonthlySummaries}
-                className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR SOLO MESES REGISTRADOS</span>
-              </button>
-              
-              <button
                 onClick={exportAllDataToJSON}
                 className="w-full bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2"
               >
