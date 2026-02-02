@@ -164,250 +164,279 @@ const App = () => {
     reader.readAsText(file);
   };
 
-  // ===================== FUNCIÓN PARA EXPORTAR SOLO RESÚMENES MENSUALES REGISTRADOS =====================
-  const exportMonthlySummaries = () => {
-    try {
-      const mesesRegistrados = Object.keys(monthlyData).sort();
+  // ===================== FUNCIÓN NUEVA: EXPORTAR SOLO RESÚMENES MENSUALES REGISTRADOS =====================
+const exportMonthlySummaries = () => {
+  try {
+    // Filtrar solo los meses que tienen datos consolidados en monthlyData
+    const mesesRegistrados = Object.keys(monthlyData)
+      .filter(monthKey => {
+        const data = monthlyData[monthKey];
+        return data && 
+               (data.informacionConsolidada?.diasTotales > 0 || 
+                data.totalesPorDia?.paso1 > 0 || 
+                data.totalesPorDia?.paso2 > 0);
+      })
+      .sort();
+    
+    if (mesesRegistrados.length === 0) {
+      alert("ℹ️ No hay meses registrados para exportar. Los meses se registran automáticamente al final de cada mes o puedes consolidarlos desde el historial.");
+      return;
+    }
+    
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Calculadora Diaria App';
+    workbook.created = new Date();
+    
+    const summarySheet = workbook.addWorksheet('Resumen Mensual General');
+    
+    // Configurar anchos de columna
+    summarySheet.getColumn(1).width = 15;
+    summarySheet.getColumn(2).width = 20;
+    summarySheet.getColumn(3).width = 20;
+    summarySheet.getColumn(4).width = 20;
+    summarySheet.getColumn(5).width = 20;
+    summarySheet.getColumn(6).width = 15;
+    
+    // Título
+    const titleRow = summarySheet.addRow(['RESUMEN DE MESES YA REGISTRADOS EN LA BASE DE DATOS']);
+    titleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
+    titleRow.alignment = { horizontal: 'center' };
+    summarySheet.mergeCells('A1:F1');
+    
+    // Información de exportación
+    summarySheet.addRow(['Fecha de exportación:', new Date().toLocaleDateString('es-CO')]);
+    summarySheet.addRow(['Total de meses registrados:', mesesRegistrados.length]);
+    summarySheet.addRow(['Estado del mes actual:', isDayCompleted ? '✅ Completado' : '⏳ En progreso']);
+    summarySheet.addRow([]);
+    
+    // Encabezados
+    const headers = summarySheet.addRow([
+      'Mes',
+      'Días Registrados',
+      'Total Paso 1',
+      'Total Paso 2',
+      'Total General',
+      'Porcentaje'
+    ]);
+    
+    headers.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '7030A0' }
+      };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+      cell.alignment = { horizontal: 'center' };
+    });
+    
+    let totalDias = 0;
+    let totalPaso1 = 0;
+    let totalPaso2 = 0;
+    let totalGeneral = 0;
+    
+    // Agregar datos de cada mes
+    mesesRegistrados.forEach((monthKey, index) => {
+      const data = monthlyData[monthKey];
       
-      if (mesesRegistrados.length === 0) {
-        alert("ℹ️ No hay meses registrados para exportar.");
-        return;
-      }
+      const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+      const totalMesPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+      const totalMesPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+      const totalMesGeneral = data.totalesPorDia?.general || (totalMesPaso1 + totalMesPaso2);
+      const porcentajeFinal = data.porcentajeFinal || 0;
       
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'Calculadora Diaria App';
-      workbook.created = new Date();
+      totalDias += diasTotales;
+      totalPaso1 += totalMesPaso1;
+      totalPaso2 += totalMesPaso2;
+      totalGeneral += totalMesGeneral;
       
-      const summarySheet = workbook.addWorksheet('Resumen Mensual General');
-      
-      summarySheet.getColumn(1).width = 15;
-      summarySheet.getColumn(2).width = 20;
-      summarySheet.getColumn(3).width = 20;
-      summarySheet.getColumn(4).width = 20;
-      summarySheet.getColumn(5).width = 20;
-      summarySheet.getColumn(6).width = 15;
-      
-      const titleRow = summarySheet.addRow(['RESUMEN DE MESES YA REGISTRADOS']);
-      titleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
-      titleRow.alignment = { horizontal: 'center' };
-      summarySheet.mergeCells('A1:F1');
-      
-      summarySheet.addRow(['Fecha de exportación:', new Date().toLocaleDateString('es-CO')]);
-      summarySheet.addRow(['Total de meses registrados:', mesesRegistrados.length]);
-      summarySheet.addRow([]);
-      
-      const headers = summarySheet.addRow([
-        'Mes',
-        'Días Registrados',
-        'Total Paso 1',
-        'Total Paso 2',
-        'Total General',
-        'Porcentaje'
+      const row = summarySheet.addRow([
+        monthKey,
+        diasTotales,
+        totalMesPaso1,
+        totalMesPaso2,
+        totalMesGeneral,
+        porcentajeFinal / 100
       ]);
       
-      headers.eachCell((cell) => {
+      // Alternar colores de fila para mejor legibilidad
+      if (index % 2 === 0) {
+        row.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'F2F2F2' }
+          };
+        });
+      }
+      
+      // Formato de números para las columnas de montos
+      [3, 4, 5].forEach(colIndex => {
+        const cell = row.getCell(colIndex);
+        cell.numFmt = '#,##0';
+      });
+      
+      // Formato de porcentaje
+      const porcentajeCell = row.getCell(6);
+      porcentajeCell.numFmt = '0.00%';
+    });
+    
+    // Agregar fila de totales
+    summarySheet.addRow([]);
+    const totalsRow = summarySheet.addRow([
+      'TOTALES',
+      totalDias,
+      totalPaso1,
+      totalPaso2,
+      totalGeneral,
+      ''
+    ]);
+    
+    totalsRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+    totalsRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: '2E75B6' }
+    };
+    
+    [3, 4, 5].forEach(colIndex => {
+      const cell = totalsRow.getCell(colIndex);
+      cell.numFmt = '#,##0';
+    });
+    
+    // Hoja de detalle por mes
+    const detailSheet = workbook.addWorksheet('Detalle por Mes');
+    
+    // Configurar anchos de columna
+    detailSheet.getColumn(1).width = 20;
+    detailSheet.getColumn(2).width = 15;
+    detailSheet.getColumn(3).width = 15;
+    detailSheet.getColumn(4).width = 15;
+    detailSheet.getColumn(5).width = 15;
+    detailSheet.getColumn(6).width = 20;
+    detailSheet.getColumn(7).width = 20;
+    detailSheet.getColumn(8).width = 20;
+    
+    // Agregar datos detallados por mes
+    mesesRegistrados.forEach((monthKey) => {
+      const data = monthlyData[monthKey];
+      
+      // Título del mes
+      const monthTitleRow = detailSheet.addRow([
+        `MES: ${monthKey} - ${data.informacionConsolidada?.diasTotales || 0} días registrados`
+      ]);
+      monthTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
+      detailSheet.mergeCells(`A${detailSheet.rowCount}:H${detailSheet.rowCount}`);
+      
+      // Encabezados de días
+      const dayHeaders = detailSheet.addRow([
+        'Fecha',
+        'Día',
+        'P1 Dato 1',
+        'P1 Dato 2',
+        'P1 Total',
+        'P2 Dato 1',
+        'P2 Dato 2',
+        'P2 Total'
+      ]);
+      
+      dayHeaders.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: '7030A0' }
+          fgColor: { argb: '4472C4' }
         };
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
-        cell.alignment = { horizontal: 'center' };
       });
       
-      let totalDias = 0;
-      let totalPaso1 = 0;
-      let totalPaso2 = 0;
-      let totalGeneral = 0;
-      
-      mesesRegistrados.forEach((monthKey, index) => {
-        const data = monthlyData[monthKey];
+      // Agregar datos de cada día del mes
+      if (data.diasRegistrados && data.diasRegistrados.length > 0) {
+        data.diasRegistrados.forEach((dia, diaIndex) => {
+          const fecha = new Date(dia.fecha + 'T00:00:00');
+          const diaSemana = fecha.toLocaleDateString('es-CO', { weekday: 'short' });
+          
+          const row = detailSheet.addRow([
+            dia.fecha,
+            diaSemana,
+            dia.paso1?.dato1 || 0,
+            dia.paso1?.dato2 || 0,
+            dia.paso1?.totalDia || 0,
+            dia.paso2?.dato1 || 0,
+            dia.paso2?.dato2 || 0,
+            dia.paso2?.totalDia || 0
+          ]);
+          
+          // Alternar colores
+          if (diaIndex % 2 === 0) {
+            row.eachCell((cell, colNumber) => {
+              if (colNumber >= 1 && colNumber <= 8) {
+                cell.fill = {
+                  type: 'pattern',
+                  pattern: 'solid',
+                  fgColor: { argb: 'E6F0FF' }
+                };
+              }
+            });
+          }
+          
+          // Formato numérico
+          [3, 4, 5, 6, 7, 8].forEach(colIndex => {
+            const cell = row.getCell(colIndex);
+            cell.numFmt = '#,##0';
+          });
+        });
         
-        const diasTotales = data.informacionConsolidada?.diasTotales || 0;
-        const totalMesPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
-        const totalMesPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
-        const totalMesGeneral = data.totalesPorDia?.general || (totalMesPaso1 + totalMesPaso2);
-        const porcentajeFinal = data.porcentajeFinal || 0;
-        
-        totalDias += diasTotales;
-        totalPaso1 += totalMesPaso1;
-        totalPaso2 += totalMesPaso2;
-        totalGeneral += totalMesGeneral;
-        
-        const row = summarySheet.addRow([
-          monthKey,
-          diasTotales,
-          totalMesPaso1,
-          totalMesPaso2,
-          totalMesGeneral,
-          porcentajeFinal / 100
+        // Agregar totales del mes
+        const mesTotalsRow = detailSheet.addRow([
+          `TOTAL ${monthKey}:`,
+          '',
+          `=SUM(C${detailSheet.rowCount - data.diasRegistrados.length}:C${detailSheet.rowCount - 1})`,
+          `=SUM(D${detailSheet.rowCount - data.diasRegistrados.length}:D${detailSheet.rowCount - 1})`,
+          `=SUM(E${detailSheet.rowCount - data.diasRegistrados.length}:E${detailSheet.rowCount - 1})`,
+          `=SUM(F${detailSheet.rowCount - data.diasRegistrados.length}:F${detailSheet.rowCount - 1})`,
+          `=SUM(G${detailSheet.rowCount - data.diasRegistrados.length}:G${detailSheet.rowCount - 1})`,
+          `=SUM(H${detailSheet.rowCount - data.diasRegistrados.length}:H${detailSheet.rowCount - 1})`
         ]);
         
-        if (index % 2 === 0) {
-          row.eachCell((cell) => {
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'F2F2F2' }
-            };
-          });
-        }
+        mesTotalsRow.font = { bold: true };
+        mesTotalsRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF2CC' }
+        };
         
-        [3, 4, 5].forEach(colIndex => {
-          const cell = row.getCell(colIndex);
+        [3, 4, 5, 6, 7, 8].forEach(colIndex => {
+          const cell = mesTotalsRow.getCell(colIndex);
           cell.numFmt = '#,##0';
         });
         
-        const porcentajeCell = row.getCell(6);
-        porcentajeCell.numFmt = '0.00%';
+        detailSheet.addRow([]);
+        detailSheet.addRow([]);
+      }
+    });
+    
+    // Guardar el archivo
+    workbook.xlsx.writeBuffer().then(buffer => {
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
       
-      summarySheet.addRow([]);
-      const totalsRow = summarySheet.addRow([
-        'TOTALES',
-        totalDias,
-        totalPaso1,
-        totalPaso2,
-        totalGeneral,
-        ''
-      ]);
+      const fileName = `resumen_meses_registrados_${currentDate}.xlsx`;
+      saveAs(blob, fileName);
       
-      totalsRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-      totalsRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '2E75B6' }
-      };
-      
-      [3, 4, 5].forEach(colIndex => {
-        const cell = totalsRow.getCell(colIndex);
-        cell.numFmt = '#,##0';
-      });
-      
-      const detailSheet = workbook.addWorksheet('Detalle por Mes');
-      
-      detailSheet.getColumn(1).width = 20;
-      detailSheet.getColumn(2).width = 15;
-      detailSheet.getColumn(3).width = 15;
-      detailSheet.getColumn(4).width = 15;
-      detailSheet.getColumn(5).width = 15;
-      detailSheet.getColumn(6).width = 20;
-      detailSheet.getColumn(7).width = 20;
-      detailSheet.getColumn(8).width = 20;
-      
-      mesesRegistrados.forEach((monthKey, monthIndex) => {
-        const data = monthlyData[monthKey];
-        
-        const monthTitleRow = detailSheet.addRow([
-          `MES: ${monthKey} - ${data.informacionConsolidada?.diasTotales || 0} días registrados`
-        ]);
-        monthTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
-        detailSheet.mergeCells(`A${detailSheet.rowCount}:H${detailSheet.rowCount}`);
-        
-        const dayHeaders = detailSheet.addRow([
-          'Fecha',
-          'Día',
-          'P1 Dato 1',
-          'P1 Dato 2',
-          'P1 Total',
-          'P2 Dato 1',
-          'P2 Dato 2',
-          'P2 Total'
-        ]);
-        
-        dayHeaders.eachCell((cell) => {
-          cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: '4472C4' }
-          };
-        });
-        
-        if (data.diasRegistrados && data.diasRegistrados.length > 0) {
-          data.diasRegistrados.forEach((dia, diaIndex) => {
-            const fecha = new Date(dia.fecha + 'T00:00:00');
-            const diaSemana = fecha.toLocaleDateString('es-CO', { weekday: 'short' });
-            
-            const row = detailSheet.addRow([
-              dia.fecha,
-              diaSemana,
-              dia.paso1?.dato1 || 0,
-              dia.paso1?.dato2 || 0,
-              dia.paso1?.totalDia || 0,
-              dia.paso2?.dato1 || 0,
-              dia.paso2?.dato2 || 0,
-              dia.paso2?.totalDia || 0
-            ]);
-            
-            if (diaIndex % 2 === 0) {
-              row.eachCell((cell, colNumber) => {
-                if (colNumber >= 1 && colNumber <= 8) {
-                  cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'E6F0FF' }
-                  };
-                }
-              });
-            }
-            
-            [3, 4, 5, 6, 7, 8].forEach(colIndex => {
-              const cell = row.getCell(colIndex);
-              cell.numFmt = '#,##0';
-            });
-          });
-          
-          const mesTotalsRow = detailSheet.addRow([
-            `TOTAL ${monthKey}:`,
-            '',
-            `=SUM(C${detailSheet.rowCount - data.diasRegistrados.length}:C${detailSheet.rowCount - 1})`,
-            `=SUM(D${detailSheet.rowCount - data.diasRegistrados.length}:D${detailSheet.rowCount - 1})`,
-            `=SUM(E${detailSheet.rowCount - data.diasRegistrados.length}:E${detailSheet.rowCount - 1})`,
-            `=SUM(F${detailSheet.rowCount - data.diasRegistrados.length}:F${detailSheet.rowCount - 1})`,
-            `=SUM(G${detailSheet.rowCount - data.diasRegistrados.length}:G${detailSheet.rowCount - 1})`,
-            `=SUM(H${detailSheet.rowCount - data.diasRegistrados.length}:H${detailSheet.rowCount - 1})`
-          ]);
-          
-          mesTotalsRow.font = { bold: true };
-          mesTotalsRow.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFF2CC' }
-          };
-          
-          [3, 4, 5, 6, 7, 8].forEach(colIndex => {
-            const cell = mesTotalsRow.getCell(colIndex);
-            cell.numFmt = '#,##0';
-          });
-          
-          detailSheet.addRow([]);
-          detailSheet.addRow([]);
-        }
-      });
-      
-      workbook.xlsx.writeBuffer().then(buffer => {
-        const blob = new Blob([buffer], { 
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-        });
-        
-        const fileName = `resumen_meses_registrados_${currentDate}.xlsx`;
-        saveAs(blob, fileName);
-        
-        alert(`✅ Resumen de meses registrados exportado exitosamente.\n\n📊 ${mesesRegistrados.length} meses exportados\n📁 Archivo: ${fileName}`);
-      });
-      
-    } catch (error) {
-      console.error('Error al exportar resúmenes mensuales:', error);
-      alert('❌ Error al exportar los resúmenes mensuales.');
-    }
-  };
+      alert(`✅ Resumen de meses registrados exportado exitosamente.\n\n📊 ${mesesRegistrados.length} meses exportados\n📁 Archivo: ${fileName}\n\n💡 Este archivo contiene SOLO los meses que ya están completados y registrados en la base de datos.`);
+    });
+    
+  } catch (error) {
+    console.error('Error al exportar resúmenes mensuales:', error);
+    alert('❌ Error al exportar los resúmenes mensuales.');
+  }
+};
 
   // ===================== FUNCIÓN PRINCIPAL PARA EXPORTAR A EXCEL =====================
   const exportToExcel = (type = 'full') => {
@@ -2103,77 +2132,79 @@ const App = () => {
         </div>
         
         {months.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No hay meses completados aún</p>
-        ) : (
-          <div className="space-y-6">
-            {months.map(([monthKey, data]) => {
-              if (!data) return null;
-              
-              const diasTotales = data.informacionConsolidada?.diasTotales || 0;
-              const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
-              const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
-              const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
-              const porcentaje = data.porcentajeFinal || 0;
+  <p className="text-gray-500 text-center py-8">No hay meses completados aún</p>
+) : (
+  <div className="space-y-6">
+    {months
+      .filter(([monthKey]) => {
+        // Solo mostrar meses completados (que están en monthlyData)
+        // y no mostrar el mes actual si no está completado
+        const isCurrentMonth = monthKey === currentMonth;
+        const hasMonthData = monthlyData[monthKey];
+        return hasMonthData && !(isCurrentMonth && !isDayCompleted);
+      })
+      .map(([monthKey, data]) => {
+        if (!data) return null;
+        
+        const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+        const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+        const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+        const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
+        const porcentaje = data.porcentajeFinal || 0;
 
-              return (
-                <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
-                  <div className="flex justify-between items-center mb-3">
-                    <h3 className="font-bold text-lg text-purple-900">
-                      {new Date(monthKey + '-01').toLocaleDateString('es-CO', { 
-                        month: 'long', 
-                        year: 'numeric' 
-                      })}
-                    </h3>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => exportMonthToExcel(monthKey)}
-                        className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
-                      >
-                        Exportar mes
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                    <div>
-                      <p className="text-gray-600">Días registrados:</p>
-                      <p className="font-bold text-lg">{diasTotales}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Total Paso 1:</p>
-                      <p className="font-bold text-blue-900">{formatCurrency(totalPaso1)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Total Paso 2:</p>
-                      <p className="font-bold text-green-900">{formatCurrency(totalPaso2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Total General:</p>
-                      <p className="font-bold text-purple-900 text-lg">{formatCurrency(totalGeneral)}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t pt-3 mt-3">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <p className="text-gray-600">Acumulado Paso 1:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral?.paso1 || totalPaso1)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Acumulado Paso 2:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral?.paso2 || totalPaso2)}</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 text-center">
-                      <p className="text-gray-600">Porcentaje final:</p>
-                      <p className="font-bold text-2xl text-purple-900">{porcentaje.toFixed(2)}%</p>
-                    </div>
-                  </div>
+        return (
+          <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => exportMonthToExcel(monthKey)}
+                  className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
+                >
+                  Exportar mes
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+              <div>
+                <p className="text-gray-600">Días registrados:</p>
+                <p className="font-bold text-lg">{diasTotales}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Total Paso 1:</p>
+                <p className="font-bold text-blue-900">{formatCurrency(totalPaso1)}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Total Paso 2:</p>
+                <p className="font-bold text-green-900">{formatCurrency(totalPaso2)}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Total General:</p>
+                <p className="font-bold text-purple-900 text-lg">{formatCurrency(totalGeneral)}</p>
+              </div>
+            </div>
+            
+            <div className="border-t pt-3 mt-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600">Acumulado Paso 1:</p>
+                  <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral?.paso1 || totalPaso1)}</p>
                 </div>
-              );
-            })}
+                <div>
+                  <p className="text-gray-600">Acumulado Paso 2:</p>
+                  <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral?.paso2 || totalPaso2)}</p>
+                </div>
+              </div>
+              <div className="mt-3 text-center">
+                <p className="text-gray-600">Porcentaje final:</p>
+                <p className="font-bold text-2xl text-purple-900">{porcentaje.toFixed(2)}%</p>
+              </div>
+            </div>
           </div>
-        )}
+        );
+      })}
+  </div>
+)}
         
         <div className="mt-6 space-y-4">
           <div className="bg-gradient-to-r from-green-50 to-teal-50 border-l-4 border-green-500 p-4 rounded-lg">
@@ -2185,7 +2216,7 @@ const App = () => {
                 className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
               >
                 <Download size={20} />
-                <span>EXPORTAR REPORTE DIARIO</span>
+                <span>EXPORTAR REPORTE COMPLETO</span>
               </button>
               
               <button
@@ -2193,13 +2224,29 @@ const App = () => {
                 className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
               >
                 <Download size={20} />
-                <span>EXPORTAR DETALLE MENSUAL</span>
+                <span>EXPORTAR DETALLE DIARIO</span>
               </button>
-
-
+              
+              <button
+                onClick={() => exportToExcel('monthly')}
+                className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR RESUMEN MENSUAL</span>
+              </button>
+              
+              {/* NUEVO BOTÓN - Exportar solo meses registrados */}
+              <button
+                onClick={exportMonthlySummaries}
+                className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Download size={20} />
+                <span>EXPORTAR SOLO MESES REGISTRADOS</span>
+              </button>
+              
               <button
                 onClick={exportAllDataToJSON}
-                className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center space-x-2"
+                className="w-full bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2"
               >
                 <Download size={20} />
                 <span>EXPORTAR BACKUP (JSON)</span>
