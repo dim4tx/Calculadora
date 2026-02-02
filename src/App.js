@@ -53,7 +53,6 @@ const App = () => {
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
 
   // ===================== FUNCIONES JSON SIMPLIFICADAS =====================
-  // FUNCIÓN SIMPLE PARA EXPORTAR TODO A JSON
   const exportAllDataToJSON = () => {
     try {
       const exportData = {
@@ -85,7 +84,6 @@ const App = () => {
     }
   };
 
-  // FUNCIÓN SIMPLE PARA IMPORTAR DESDE JSON
   const importData = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -99,20 +97,16 @@ const App = () => {
         
         console.log('📥 Datos importados:', importedData);
         
-        // Extraer los datos directamente
         let datosImportados = importedData.datosDiarios || importedData.historicalData || importedData;
         let resumenesImportados = importedData.resumenesMensuales || importedData.monthlyData || {};
         
-        // Validar que hay datos
         if (Object.keys(datosImportados).length === 0) {
           throw new Error('El archivo no contiene datos válidos');
         }
         
-        // Actualizar el estado
         setHistoricalData(datosImportados);
         setMonthlyData(resumenesImportados);
         
-        // Verificar si el día actual está en los datos importados
         if (datosImportados[currentDate]) {
           const datosHoy = datosImportados[currentDate];
           setTodayData(datosHoy);
@@ -122,13 +116,11 @@ const App = () => {
           
           alert(`✅ Backup importado exitosamente!\n\n📊 Se encontraron datos para hoy (${currentDate}).\nLos datos se cargaron en modo solo lectura.`);
         } else {
-          // Buscar el último día registrado para continuar
           const fechas = Object.keys(datosImportados).sort();
           if (fechas.length > 0) {
             const ultimaFecha = fechas[fechas.length - 1];
             const ultimosDatos = datosImportados[ultimaFecha];
             
-            // Preparar para continuar desde hoy
             setTodayData({
               date: currentDate,
               paso1: {
@@ -172,6 +164,251 @@ const App = () => {
     reader.readAsText(file);
   };
 
+  // ===================== FUNCIÓN PARA EXPORTAR SOLO RESÚMENES MENSUALES REGISTRADOS =====================
+  const exportMonthlySummaries = () => {
+    try {
+      const mesesRegistrados = Object.keys(monthlyData).sort();
+      
+      if (mesesRegistrados.length === 0) {
+        alert("ℹ️ No hay meses registrados para exportar.");
+        return;
+      }
+      
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Calculadora Diaria App';
+      workbook.created = new Date();
+      
+      const summarySheet = workbook.addWorksheet('Resumen Mensual General');
+      
+      summarySheet.getColumn(1).width = 15;
+      summarySheet.getColumn(2).width = 20;
+      summarySheet.getColumn(3).width = 20;
+      summarySheet.getColumn(4).width = 20;
+      summarySheet.getColumn(5).width = 20;
+      summarySheet.getColumn(6).width = 15;
+      
+      const titleRow = summarySheet.addRow(['RESUMEN DE MESES YA REGISTRADOS']);
+      titleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
+      titleRow.alignment = { horizontal: 'center' };
+      summarySheet.mergeCells('A1:F1');
+      
+      summarySheet.addRow(['Fecha de exportación:', new Date().toLocaleDateString('es-CO')]);
+      summarySheet.addRow(['Total de meses registrados:', mesesRegistrados.length]);
+      summarySheet.addRow([]);
+      
+      const headers = summarySheet.addRow([
+        'Mes',
+        'Días Registrados',
+        'Total Paso 1',
+        'Total Paso 2',
+        'Total General',
+        'Porcentaje'
+      ]);
+      
+      headers.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '7030A0' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { horizontal: 'center' };
+      });
+      
+      let totalDias = 0;
+      let totalPaso1 = 0;
+      let totalPaso2 = 0;
+      let totalGeneral = 0;
+      
+      mesesRegistrados.forEach((monthKey, index) => {
+        const data = monthlyData[monthKey];
+        
+        const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+        const totalMesPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+        const totalMesPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+        const totalMesGeneral = data.totalesPorDia?.general || (totalMesPaso1 + totalMesPaso2);
+        const porcentajeFinal = data.porcentajeFinal || 0;
+        
+        totalDias += diasTotales;
+        totalPaso1 += totalMesPaso1;
+        totalPaso2 += totalMesPaso2;
+        totalGeneral += totalMesGeneral;
+        
+        const row = summarySheet.addRow([
+          monthKey,
+          diasTotales,
+          totalMesPaso1,
+          totalMesPaso2,
+          totalMesGeneral,
+          porcentajeFinal / 100
+        ]);
+        
+        if (index % 2 === 0) {
+          row.eachCell((cell) => {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'F2F2F2' }
+            };
+          });
+        }
+        
+        [3, 4, 5].forEach(colIndex => {
+          const cell = row.getCell(colIndex);
+          cell.numFmt = '#,##0';
+        });
+        
+        const porcentajeCell = row.getCell(6);
+        porcentajeCell.numFmt = '0.00%';
+      });
+      
+      summarySheet.addRow([]);
+      const totalsRow = summarySheet.addRow([
+        'TOTALES',
+        totalDias,
+        totalPaso1,
+        totalPaso2,
+        totalGeneral,
+        ''
+      ]);
+      
+      totalsRow.font = { bold: true, color: { argb: 'FFFFFF' } };
+      totalsRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '2E75B6' }
+      };
+      
+      [3, 4, 5].forEach(colIndex => {
+        const cell = totalsRow.getCell(colIndex);
+        cell.numFmt = '#,##0';
+      });
+      
+      const detailSheet = workbook.addWorksheet('Detalle por Mes');
+      
+      detailSheet.getColumn(1).width = 20;
+      detailSheet.getColumn(2).width = 15;
+      detailSheet.getColumn(3).width = 15;
+      detailSheet.getColumn(4).width = 15;
+      detailSheet.getColumn(5).width = 15;
+      detailSheet.getColumn(6).width = 20;
+      detailSheet.getColumn(7).width = 20;
+      detailSheet.getColumn(8).width = 20;
+      
+      mesesRegistrados.forEach((monthKey, monthIndex) => {
+        const data = monthlyData[monthKey];
+        
+        const monthTitleRow = detailSheet.addRow([
+          `MES: ${monthKey} - ${data.informacionConsolidada?.diasTotales || 0} días registrados`
+        ]);
+        monthTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
+        detailSheet.mergeCells(`A${detailSheet.rowCount}:H${detailSheet.rowCount}`);
+        
+        const dayHeaders = detailSheet.addRow([
+          'Fecha',
+          'Día',
+          'P1 Dato 1',
+          'P1 Dato 2',
+          'P1 Total',
+          'P2 Dato 1',
+          'P2 Dato 2',
+          'P2 Total'
+        ]);
+        
+        dayHeaders.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: '4472C4' }
+          };
+        });
+        
+        if (data.diasRegistrados && data.diasRegistrados.length > 0) {
+          data.diasRegistrados.forEach((dia, diaIndex) => {
+            const fecha = new Date(dia.fecha + 'T00:00:00');
+            const diaSemana = fecha.toLocaleDateString('es-CO', { weekday: 'short' });
+            
+            const row = detailSheet.addRow([
+              dia.fecha,
+              diaSemana,
+              dia.paso1?.dato1 || 0,
+              dia.paso1?.dato2 || 0,
+              dia.paso1?.totalDia || 0,
+              dia.paso2?.dato1 || 0,
+              dia.paso2?.dato2 || 0,
+              dia.paso2?.totalDia || 0
+            ]);
+            
+            if (diaIndex % 2 === 0) {
+              row.eachCell((cell, colNumber) => {
+                if (colNumber >= 1 && colNumber <= 8) {
+                  cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'E6F0FF' }
+                  };
+                }
+              });
+            }
+            
+            [3, 4, 5, 6, 7, 8].forEach(colIndex => {
+              const cell = row.getCell(colIndex);
+              cell.numFmt = '#,##0';
+            });
+          });
+          
+          const mesTotalsRow = detailSheet.addRow([
+            `TOTAL ${monthKey}:`,
+            '',
+            `=SUM(C${detailSheet.rowCount - data.diasRegistrados.length}:C${detailSheet.rowCount - 1})`,
+            `=SUM(D${detailSheet.rowCount - data.diasRegistrados.length}:D${detailSheet.rowCount - 1})`,
+            `=SUM(E${detailSheet.rowCount - data.diasRegistrados.length}:E${detailSheet.rowCount - 1})`,
+            `=SUM(F${detailSheet.rowCount - data.diasRegistrados.length}:F${detailSheet.rowCount - 1})`,
+            `=SUM(G${detailSheet.rowCount - data.diasRegistrados.length}:G${detailSheet.rowCount - 1})`,
+            `=SUM(H${detailSheet.rowCount - data.diasRegistrados.length}:H${detailSheet.rowCount - 1})`
+          ]);
+          
+          mesTotalsRow.font = { bold: true };
+          mesTotalsRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF2CC' }
+          };
+          
+          [3, 4, 5, 6, 7, 8].forEach(colIndex => {
+            const cell = mesTotalsRow.getCell(colIndex);
+            cell.numFmt = '#,##0';
+          });
+          
+          detailSheet.addRow([]);
+          detailSheet.addRow([]);
+        }
+      });
+      
+      workbook.xlsx.writeBuffer().then(buffer => {
+        const blob = new Blob([buffer], { 
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        
+        const fileName = `resumen_meses_registrados_${currentDate}.xlsx`;
+        saveAs(blob, fileName);
+        
+        alert(`✅ Resumen de meses registrados exportado exitosamente.\n\n📊 ${mesesRegistrados.length} meses exportados\n📁 Archivo: ${fileName}`);
+      });
+      
+    } catch (error) {
+      console.error('Error al exportar resúmenes mensuales:', error);
+      alert('❌ Error al exportar los resúmenes mensuales.');
+    }
+  };
+
   // ===================== FUNCIÓN PRINCIPAL PARA EXPORTAR A EXCEL =====================
   const exportToExcel = (type = 'full') => {
     try {
@@ -193,7 +430,6 @@ const App = () => {
         ? historicalData[currentDate] 
         : todayData;
 
-      // HOJA 1: RESUMEN DEL DÍA ACTUAL
       if (type === 'full' || type === 'today') {
         const todaySheet = workbook.addWorksheet('Día Actual');
         
@@ -210,7 +446,6 @@ const App = () => {
         todaySheet.addRow(['Estado:', isDayCompleted ? '✅ Día completado' : '⏳ Día en progreso']);
         todaySheet.addRow([]);
 
-        // Paso 1
         const paso1Header = todaySheet.addRow(['PASO 1', '']);
         paso1Header.font = { bold: true, color: { argb: 'FFFFFF' } };
         paso1Header.fill = {
@@ -227,7 +462,6 @@ const App = () => {
         todaySheet.addRow(['Acumulado del mes:', dayDataForExport.paso1.acumulado || 0]);
         todaySheet.addRow([]);
 
-        // Paso 2
         const paso2Header = todaySheet.addRow(['PASO 2', '']);
         paso2Header.font = { bold: true, color: { argb: 'FFFFFF' } };
         paso2Header.fill = {
@@ -244,7 +478,6 @@ const App = () => {
         todaySheet.addRow(['Acumulado del mes:', dayDataForExport.paso2.acumulado || 0]);
         todaySheet.addRow([]);
 
-        // Resumen general
         const resumenHeader = todaySheet.addRow(['RESUMEN GENERAL', '']);
         resumenHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
         resumenHeader.fill = {
@@ -271,7 +504,6 @@ const App = () => {
         todaySheet.addRow(['Total acumulado (P1 + P2):', totalAcumulado]);
         todaySheet.addRow(['Porcentaje del día:', porcentajeDia / 100]);
 
-        // Formato de números
         for (let i = 7; i <= 22; i++) {
           if (i !== 6 && i !== 13 && i !== 20) {
             const cell = todaySheet.getCell(`B${i}`);
@@ -281,12 +513,10 @@ const App = () => {
           }
         }
 
-        // Formato porcentaje
         const porcentajeCell = todaySheet.getCell('B22');
         porcentajeCell.numFmt = '0.00%';
       }
 
-      // HOJA 2: DETALLE DIARIO COMPLETO
       if (type === 'full' || type === 'daily') {
         const dailySheet = workbook.addWorksheet('Detalle Diario');
 
@@ -440,7 +670,6 @@ const App = () => {
         }
       }
 
-      // HOJA 3: RESUMEN POR MES
       if (type === 'full' || type === 'monthly') {
         if (Object.keys(monthlyData).length > 0) {
           const monthlySheet = workbook.addWorksheet('Resumen por Mes');
@@ -574,7 +803,6 @@ const App = () => {
         }
       }
 
-      // Generar el archivo
       workbook.xlsx.writeBuffer().then(buffer => {
         const blob = new Blob([buffer], { 
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
@@ -621,7 +849,6 @@ const App = () => {
       workbook.creator = 'Calculadora Diaria App';
       workbook.created = new Date();
 
-      // Hoja 1: Resumen del mes
       const summarySheet = workbook.addWorksheet('Resumen del Mes');
       
       summarySheet.getColumn(1).width = 25;
@@ -643,7 +870,6 @@ const App = () => {
       ]);
       summarySheet.addRow([]);
 
-      // Totales por día
       const totalesHeader = summarySheet.addRow(['TOTALES POR DÍA', '']);
       totalesHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
       totalesHeader.fill = {
@@ -662,7 +888,6 @@ const App = () => {
       summarySheet.addRow(['Total General:', totalGeneral]);
       summarySheet.addRow([]);
 
-      // Acumulados finales
       const acumuladosHeader = summarySheet.addRow(['ACUMULADOS FINALES', '']);
       acumuladosHeader.font = { bold: true, color: { argb: 'FFFFFF' } };
       acumuladosHeader.fill = {
@@ -682,17 +907,14 @@ const App = () => {
       summarySheet.addRow(['Acumulado Total:', acumuladoTotal]);
       summarySheet.addRow(['Porcentaje final:', porcentajeFinal / 100]);
 
-      // Formato de números
       [2, 3, 4, 5, 6, 9, 10, 11, 14, 15, 16].forEach(row => {
         const cell = summarySheet.getCell(`B${row}`);
         cell.numFmt = '#,##0';
       });
 
-      // Formato porcentaje
       const porcentajeCell = summarySheet.getCell('B17');
       porcentajeCell.numFmt = '0.00%';
 
-      // Generar el archivo
       workbook.xlsx.writeBuffer().then(buffer => {
         const blob = new Blob([buffer], { 
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
@@ -857,20 +1079,20 @@ const App = () => {
       setTodayData({
         date: currentDate,
         paso1: {
-          dato1: dayData.paso1.dato1 || '',
-          dato2: dayData.paso1.dato2 || '',
-          total: dayData.paso1.total || 0,
-          acumuladoAnterior: dayData.paso1.acumuladoAnterior || 0,
-          acumulado: dayData.paso1.acumulado || 0,
-          totalDiaAnterior: dayData.paso1.totalDiaAnterior || 0
+          dato1: dayData.paso1?.dato1 || '',
+          dato2: dayData.paso1?.dato2 || '',
+          total: dayData.paso1?.total || 0,
+          acumuladoAnterior: dayData.paso1?.acumuladoAnterior || 0,
+          acumulado: dayData.paso1?.acumulado || 0,
+          totalDiaAnterior: dayData.paso1?.totalDiaAnterior || 0
         },
         paso2: {
-          dato1: dayData.paso2.dato1 || '',
-          dato2: dayData.paso2.dato2 || '',
-          total: dayData.paso2.total || 0,
-          acumuladoAnterior: dayData.paso2.acumuladoAnterior || 0,
-          acumulado: dayData.paso2.acumulado || 0,
-          totalDiaAnterior: dayData.paso2.totalDiaAnterior || 0
+          dato1: dayData.paso2?.dato1 || '',
+          dato2: dayData.paso2?.dato2 || '',
+          total: dayData.paso2?.total || 0,
+          acumuladoAnterior: dayData.paso2?.acumuladoAnterior || 0,
+          acumulado: dayData.paso2?.acumulado || 0,
+          totalDiaAnterior: dayData.paso2?.totalDiaAnterior || 0
         },
         porcentaje: dayData.porcentaje || 0
       });
@@ -893,20 +1115,20 @@ const App = () => {
         setTodayData({
           date: currentDate,
           paso1: {
-            dato1: data.paso1.dato1 || '',
-            dato2: data.paso1.dato2 || '',
-            total: data.paso1.total || 0,
-            acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
-            acumulado: data.paso1.acumulado || 0,
-            totalDiaAnterior: data.paso1.totalDiaAnterior || 0
+            dato1: data.paso1?.dato1 || '',
+            dato2: data.paso1?.dato2 || '',
+            total: data.paso1?.total || 0,
+            acumuladoAnterior: data.paso1?.acumuladoAnterior || 0,
+            acumulado: data.paso1?.acumulado || 0,
+            totalDiaAnterior: data.paso1?.totalDiaAnterior || 0
           },
           paso2: {
-            dato1: data.paso2.dato1 || '',
-            dato2: data.paso2.dato2 || '',
-            total: data.paso2.total || 0,
-            acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
-            acumulado: data.paso2.acumulado || 0,
-            totalDiaAnterior: data.paso2.totalDiaAnterior || 0
+            dato1: data.paso2?.dato1 || '',
+            dato2: data.paso2?.dato2 || '',
+            total: data.paso2?.total || 0,
+            acumuladoAnterior: data.paso2?.acumuladoAnterior || 0,
+            acumulado: data.paso2?.acumulado || 0,
+            totalDiaAnterior: data.paso2?.totalDiaAnterior || 0
           },
           porcentaje: data.porcentaje || 0
         });
@@ -935,20 +1157,20 @@ const App = () => {
             setTodayData({
               date: currentDate,
               paso1: {
-                dato1: data.paso1.dato1 || '',
-                dato2: data.paso1.dato2 || '',
-                total: data.paso1.total || 0,
-                acumuladoAnterior: data.paso1.acumuladoAnterior || 0,
-                acumulado: data.paso1.acumulado || 0,
-                totalDiaAnterior: data.paso1.totalDiaAnterior || 0
+                dato1: data.paso1?.dato1 || '',
+                dato2: data.paso1?.dato2 || '',
+                total: data.paso1?.total || 0,
+                acumuladoAnterior: data.paso1?.acumuladoAnterior || 0,
+                acumulado: data.paso1?.acumulado || 0,
+                totalDiaAnterior: data.paso1?.totalDiaAnterior || 0
               },
               paso2: {
-                dato1: data.paso2.dato1 || '',
-                dato2: data.paso2.dato2 || '',
-                total: data.paso2.total || 0,
-                acumuladoAnterior: data.paso2.acumuladoAnterior || 0,
-                acumulado: data.paso2.acumulado || 0,
-                totalDiaAnterior: data.paso2.totalDiaAnterior || 0
+                dato1: data.paso2?.dato1 || '',
+                dato2: data.paso2?.dato2 || '',
+                total: data.paso2?.total || 0,
+                acumuladoAnterior: data.paso2?.acumuladoAnterior || 0,
+                acumulado: data.paso2?.acumulado || 0,
+                totalDiaAnterior: data.paso2?.totalDiaAnterior || 0
               },
               porcentaje: data.porcentaje || 0
             });
@@ -1103,28 +1325,28 @@ const App = () => {
       const diasRegistrados = [];
       
       const ultimoDia = monthDays[monthDays.length - 1];
-      const acumuladoFinalPaso1 = ultimoDia[1].paso1.acumulado;
-      const acumuladoFinalPaso2 = ultimoDia[1].paso2.acumulado;
+      const acumuladoFinalPaso1 = ultimoDia[1]?.paso1?.acumulado || 0;
+      const acumuladoFinalPaso2 = ultimoDia[1]?.paso2?.acumulado || 0;
       
       monthDays.forEach(([date, data]) => {
-        totalDiarioPaso1 += data.paso1.total;
-        totalDiarioPaso2 += data.paso2.total;
+        totalDiarioPaso1 += data.paso1?.total || 0;
+        totalDiarioPaso2 += data.paso2?.total || 0;
         
         diasRegistrados.push({
           fecha: date,
           paso1: {
-            dato1: parseFloat(data.paso1.dato1) || 0,
-            dato2: parseFloat(data.paso1.dato2) || 0,
-            totalDia: data.paso1.total,
-            acumuladoHastaDia: data.paso1.acumulado
+            dato1: parseFloat(data.paso1?.dato1) || 0,
+            dato2: parseFloat(data.paso1?.dato2) || 0,
+            totalDia: data.paso1?.total || 0,
+            acumuladoHastaDia: data.paso1?.acumulado || 0
           },
           paso2: {
-            dato1: parseFloat(data.paso2.dato1) || 0,
-            dato2: parseFloat(data.paso2.dato2) || 0,
-            totalDia: data.paso2.total,
-            acumuladoHastaDia: data.paso2.acumulado
+            dato1: parseFloat(data.paso2?.dato1) || 0,
+            dato2: parseFloat(data.paso2?.dato2) || 0,
+            totalDia: data.paso2?.total || 0,
+            acumuladoHastaDia: data.paso2?.acumulado || 0
           },
-          porcentajeDia: data.porcentaje
+          porcentajeDia: data.porcentaje || 0
         });
       });
       
@@ -1198,8 +1420,8 @@ const App = () => {
         const [fechaAnterior, datosAnterior] = diasDelMes[0];
         console.log('📅 Último día del mes con datos:', fechaAnterior);
         
-        const totalDiaAnteriorPaso1 = datosAnterior.paso1.total || 0;
-        const totalDiaAnteriorPaso2 = datosAnterior.paso2.total || 0;
+        const totalDiaAnteriorPaso1 = datosAnterior.paso1?.total || 0;
+        const totalDiaAnteriorPaso2 = datosAnterior.paso2?.total || 0;
         
         setTodayData(prev => ({
           ...prev,
@@ -1208,16 +1430,16 @@ const App = () => {
             dato1: '',
             dato2: '',
             total: 0,
-            acumuladoAnterior: datosAnterior.paso1.acumulado || 0,
-            acumulado: datosAnterior.paso1.acumulado || 0,
+            acumuladoAnterior: datosAnterior.paso1?.acumulado || 0,
+            acumulado: datosAnterior.paso1?.acumulado || 0,
             totalDiaAnterior: totalDiaAnteriorPaso1
           },
           paso2: {
             dato1: '',
             dato2: '',
             total: 0,
-            acumuladoAnterior: datosAnterior.paso2.acumulado || 0,
-            acumulado: datosAnterior.paso2.acumulado || 0,
+            acumuladoAnterior: datosAnterior.paso2?.acumulado || 0,
+            acumulado: datosAnterior.paso2?.acumulado || 0,
             totalDiaAnterior: totalDiaAnteriorPaso2
           },
           porcentaje: 0
@@ -1294,16 +1516,16 @@ const App = () => {
     for (let i = 0; i < diasDelMes.length; i++) {
       const [fecha, datos] = diasDelMes[i];
       
-      const acumuladoAnteriorCorrectoPaso1 = i > 0 ? diasDelMes[i-1][1].paso1.acumulado : 0;
-      const acumuladoAnteriorCorrectoPaso2 = i > 0 ? diasDelMes[i-1][1].paso2.acumulado : 0;
+      const acumuladoAnteriorCorrectoPaso1 = i > 0 ? diasDelMes[i-1][1]?.paso1?.acumulado || 0 : 0;
+      const acumuladoAnteriorCorrectoPaso2 = i > 0 ? diasDelMes[i-1][1]?.paso2?.acumulado || 0 : 0;
       
-      const acumuladoCorrectoPaso1 = acumuladoAnteriorCorrectoPaso1 + datos.paso1.total;
-      const acumuladoCorrectoPaso2 = acumuladoAnteriorCorrectoPaso2 + datos.paso2.total;
+      const acumuladoCorrectoPaso1 = acumuladoAnteriorCorrectoPaso1 + (datos.paso1?.total || 0);
+      const acumuladoCorrectoPaso2 = acumuladoAnteriorCorrectoPaso2 + (datos.paso2?.total || 0);
       
-      if (datos.paso1.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso1 || 
-          datos.paso1.acumulado !== acumuladoCorrectoPaso1 ||
-          datos.paso2.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso2 || 
-          datos.paso2.acumulado !== acumuladoCorrectoPaso2) {
+      if (datos.paso1?.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso1 || 
+          datos.paso1?.acumulado !== acumuladoCorrectoPaso1 ||
+          datos.paso2?.acumuladoAnterior !== acumuladoAnteriorCorrectoPaso2 || 
+          datos.paso2?.acumulado !== acumuladoCorrectoPaso2) {
         
         const datosCorregidos = {
           ...datos,
@@ -1319,8 +1541,8 @@ const App = () => {
           }
         };
         
-        const totalPaso1 = datos.paso1.total;
-        const totalPaso2 = datos.paso2.total;
+        const totalPaso1 = datos.paso1?.total || 0;
+        const totalPaso2 = datos.paso2?.total || 0;
         if (totalPaso1 > 0 && totalPaso2 > 0) {
           const menor = Math.min(totalPaso1, totalPaso2);
           const mayor = Math.max(totalPaso1, totalPaso2);
@@ -1383,6 +1605,7 @@ const App = () => {
 
     setTodayData(prev => {
       const newData = { ...prev };
+      if (!newData[paso]) newData[paso] = {};
       newData[paso][field] = numValue;
 
       const dato1 = parseFloat(newData[paso].dato1) || 0;
@@ -1427,16 +1650,20 @@ const App = () => {
     const numValue = parseCurrency(value);
     
     setEditData(prev => {
+      if (!prev) return prev;
+      
       const newData = { ...prev };
+      if (!newData[paso]) newData[paso] = {};
+      
       newData[paso][field] = numValue;
       
       const dato1 = parseFloat(newData[paso].dato1) || 0;
       const dato2 = parseFloat(newData[paso].dato2) || 0;
       newData[paso].total = dato1 + dato2;
-      newData[paso].acumulado = newData[paso].acumuladoAnterior + newData[paso].total;
+      newData[paso].acumulado = (newData[paso].acumuladoAnterior || 0) + newData[paso].total;
       
-      const totalPaso1 = newData.paso1.total;
-      const totalPaso2 = newData.paso2.total;
+      const totalPaso1 = newData.paso1?.total || 0;
+      const totalPaso2 = newData.paso2?.total || 0;
       if (totalPaso1 > 0 && totalPaso2 > 0) {
         const menor = Math.min(totalPaso1, totalPaso2);
         const mayor = Math.max(totalPaso1, totalPaso2);
@@ -1449,6 +1676,8 @@ const App = () => {
 
   // 🆕 Función para calcular porcentaje del día en tiempo real
   const calculateDayPercentage = () => {
+    if (!todayData || !todayData.paso1 || !todayData.paso2) return 0;
+    
     const totalPaso1 = parseFloat(todayData.paso1.dato1 || 0) + parseFloat(todayData.paso1.dato2 || 0);
     const totalPaso2 = parseFloat(todayData.paso2.dato1 || 0) + parseFloat(todayData.paso2.dato2 || 0);
     
@@ -1464,37 +1693,93 @@ const App = () => {
 
   // 🆕 Calcular porcentaje del día en tiempo real cuando cambian los inputs
   useEffect(() => {
-    if (!isDayCompleted) {
-      const porcentajeDia = calculateDayPercentage();
-      setTodayData(prev => ({
-        ...prev,
-        porcentaje: porcentajeDia
-      }));
+    if (!isDayCompleted && todayData && todayData.paso1 && todayData.paso2) {
+      try {
+        const porcentajeDia = calculateDayPercentage();
+        setTodayData(prev => ({
+          ...prev,
+          porcentaje: porcentajeDia
+        }));
+      } catch (error) {
+        console.error('Error calculando porcentaje en tiempo real:', error);
+      }
     }
-  }, [todayData.paso1.dato1, todayData.paso1.dato2, todayData.paso2.dato1, todayData.paso2.dato2, isDayCompleted]);
+  }, [todayData?.paso1?.dato1, todayData?.paso1?.dato2, todayData?.paso2?.dato1, todayData?.paso2?.dato2, isDayCompleted]);
 
-  // Guardar datos del día
+  // ===================== FUNCIÓN PARA SELECCIONAR FECHA EN CALENDARIO =====================
+  const selectCalendarDate = (date) => {
+    const data = historicalData[date];
+    
+    if (data) {
+      viewHistoricalData(date);
+    } else {
+      if (window.confirm(`¿Quieres registrar datos para el día ${date}?`)) {
+        setupDateForRegistration(date);
+      }
+    }
+  };
+
+  // ===================== CONFIGURAR FECHA PARA REGISTRO =====================
+  const setupDateForRegistration = (date) => {
+    const selectedMonth = date.slice(0, 7);
+    
+    const diasDelMes = Object.entries(historicalData)
+      .filter(([d]) => d.startsWith(selectedMonth) && d < date)
+      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
+    
+    let acumuladoAnteriorPaso1 = 0;
+    let acumuladoAnteriorPaso2 = 0;
+    
+    if (diasDelMes.length > 0) {
+      const ultimoDia = diasDelMes[0][1];
+      acumuladoAnteriorPaso1 = ultimoDia.paso1?.acumulado || 0;
+      acumuladoAnteriorPaso2 = ultimoDia.paso2?.acumulado || 0;
+    }
+    
+    const newTodayData = {
+      date: date,
+      paso1: {
+        dato1: '',
+        dato2: '',
+        total: 0,
+        acumuladoAnterior: acumuladoAnteriorPaso1,
+        acumulado: acumuladoAnteriorPaso1,
+        totalDiaAnterior: 0
+      },
+      paso2: {
+        dato1: '',
+        dato2: '',
+        total: 0,
+        acumuladoAnterior: acumuladoAnteriorPaso2,
+        acumulado: acumuladoAnteriorPaso2,
+        totalDiaAnterior: 0
+      },
+      porcentaje: 0
+    };
+    
+    setTodayData(newTodayData);
+    setIsDayCompleted(false);
+    setCompletedSteps({ paso1: false, paso2: false });
+    setCurrentView('paso1');
+    setSelectedDate(date);
+    setShowCalendar(false);
+    
+    alert(`✅ Listo para registrar datos del ${date}\n\n📊 Acumulados cargados desde día anterior del mismo mes.`);
+  };
+
+  // ===================== GUARDAR DATOS DEL DÍA (SOPORTA DÍAS PASADOS) =====================
   const saveData = async () => {
     try {
-      console.log('💾 Guardando datos para el día:', currentDate);
+      const saveDate = selectedDate || currentDate;
+      console.log('💾 Guardando datos para el día:', saveDate);
       
-      if (isLastDayOfMonth) {
-        const confirmSave = window.confirm(
-          '📅 ¡ÚLTIMO DÍA DEL MES!\n\n' +
-          'Estás a punto de guardar datos del último día del mes.\n\n' +
-          '✅ Puedes registrar datos normalmente\n' +
-          '⚠️ Mañana comenzará un nuevo mes\n' +
-          '📊 El resumen del mes estará disponible para exportar manualmente\n\n' +
-          '¿Continuar con el guardado?'
-        );
-        
-        if (!confirmSave) {
-          return;
-        }
+      if (new Date(saveDate) > new Date()) {
+        alert('❌ No puedes registrar datos para días futuros.');
+        return;
       }
       
       const diasDelMes = Object.entries(historicalData)
-        .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
+        .filter(([date]) => date.startsWith(saveDate.slice(0, 7)) && date < saveDate)
         .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
       
       let acumuladoAnteriorPaso1 = 0;
@@ -1502,8 +1787,8 @@ const App = () => {
       
       if (diasDelMes.length > 0) {
         const ultimoDia = diasDelMes[0][1];
-        acumuladoAnteriorPaso1 = ultimoDia.paso1.acumulado || 0;
-        acumuladoAnteriorPaso2 = ultimoDia.paso2.acumulado || 0;
+        acumuladoAnteriorPaso1 = ultimoDia.paso1?.acumulado || 0;
+        acumuladoAnteriorPaso2 = ultimoDia.paso2?.acumulado || 0;
         
         console.log('📊 Acumulado anterior encontrado del día:', diasDelMes[0][0], {
           paso1: acumuladoAnteriorPaso1,
@@ -1519,10 +1804,16 @@ const App = () => {
       const nuevoAcumuladoPaso1 = acumuladoAnteriorPaso1 + totalDiaPaso1;
       const nuevoAcumuladoPaso2 = acumuladoAnteriorPaso2 + totalDiaPaso2;
       
-      let porcentajeDia = calculateDayPercentage();
+      let porcentajeDia = 0;
+      try {
+        porcentajeDia = calculateDayPercentage();
+      } catch (error) {
+        console.error('Error calculando porcentaje:', error);
+        porcentajeDia = 0;
+      }
       
       const datosDia = {
-        date: currentDate,
+        date: saveDate,
         paso1: {
           dato1: todayData.paso1.dato1 || '',
           dato2: todayData.paso1.dato2 || '',
@@ -1542,26 +1833,67 @@ const App = () => {
         porcentaje: porcentajeDia
       };
       
-      console.log('💾 Guardando datos CORREGIDOS:', datosDia);
+      console.log('💾 Guardando datos CORREGIDOS para fecha:', saveDate, datosDia);
       
       const nuevosHistoricalData = {
         ...historicalData,
-        [currentDate]: datosDia
+        [saveDate]: datosDia
       };
+      
+      if (saveDate !== currentDate) {
+        const mesActual = saveDate.slice(0, 7);
+        const diasDelMes = Object.entries(nuevosHistoricalData)
+          .filter(([date]) => date.startsWith(mesActual))
+          .sort((a, b) => a[0].localeCompare(b[0]));
+        
+        for (let i = 0; i < diasDelMes.length; i++) {
+          const fecha = diasDelMes[i][0];
+          const datos = { ...diasDelMes[i][1] };
+          
+          if (i === 0) {
+            datos.paso1.acumuladoAnterior = 0;
+            datos.paso1.acumulado = datos.paso1.total;
+            datos.paso2.acumuladoAnterior = 0;
+            datos.paso2.acumulado = datos.paso2.total;
+          } else {
+            const datosAnterior = nuevosHistoricalData[diasDelMes[i-1][0]];
+            datos.paso1.acumuladoAnterior = datosAnterior.paso1?.acumulado || 0;
+            datos.paso1.acumulado = (datosAnterior.paso1?.acumulado || 0) + datos.paso1.total;
+            datos.paso2.acumuladoAnterior = datosAnterior.paso2?.acumulado || 0;
+            datos.paso2.acumulado = (datosAnterior.paso2?.acumulado || 0) + datos.paso2.total;
+          }
+          
+          if (datos.paso1.total > 0 && datos.paso2.total > 0) {
+            const menor = Math.min(datos.paso1.total, datos.paso2.total);
+            const mayor = Math.max(datos.paso1.total, datos.paso2.total);
+            datos.porcentaje = (menor / mayor) * 100;
+          }
+          
+          nuevosHistoricalData[fecha] = datos;
+        }
+      }
       
       setHistoricalData(nuevosHistoricalData);
       setTodayData(datosDia);
       
       if (user) {
-        const exito = await saveToFirebase('historicalData', currentDate, datosDia);
-        setCloudStatus(exito ? '💾 Guardado en la nube' : '💾 Guardado localmente');
+        const mesActual = saveDate.slice(0, 7);
+        const diasDelMes = Object.entries(nuevosHistoricalData)
+          .filter(([date]) => date.startsWith(mesActual));
+        
+        for (const [fecha, datos] of diasDelMes) {
+          await saveToFirebase('historicalData', fecha, datos);
+        }
+        
+        setCloudStatus('💾 Datos sincronizados en la nube');
       }
       
       setIsDayCompleted(true);
       setCompletedSteps({ paso1: true, paso2: true });
       setCurrentView('resumen');
+      setSelectedDate(null);
 
-      alert('✅ Día guardado exitosamente.\n\nLos datos permanecen visibles en modo solo lectura.\nPodrás registrar el siguiente día mañana.');
+      alert(`✅ Día ${saveDate} guardado exitosamente.\n\n📊 Los acumulados del mes han sido actualizados correctamente.`);
       
     } catch (error) {
       console.error('Error al guardar datos:', error);
@@ -1657,6 +1989,99 @@ const App = () => {
       newDate.setMonth(newDate.getMonth() + increment);
       return newDate;
     });
+  };
+
+  // ===================== RENDERIZAR CALENDARIO CORREGIDO =====================
+  const renderCalendar = () => {
+    const days = generateCalendarDays();
+    const monthName = calendarMonth.toLocaleDateString('es-CO', { 
+      month: 'long', 
+      year: 'numeric' 
+    });
+    const weekDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">Historial</h2>
+          <button
+            onClick={() => setShowCalendar(false)}
+            className="text-gray-500 hover:text-gray-700 text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={() => changeMonth(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h3 className="text-xl font-semibold capitalize">{monthName}</h3>
+          <button
+            onClick={() => changeMonth(1)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-2 mb-2">
+          {weekDays.map(day => (
+            <div key={day} className="text-center font-semibold text-gray-600 text-sm">
+              {day}
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-2">
+          {days.map((dayInfo, index) => {
+            if (!dayInfo) {
+              return <div key={`empty-${index}`} className="aspect-square"></div>;
+            }
+
+            const { day, date, hasData, isToday } = dayInfo;
+            
+            const isFutureDate = new Date(date) > new Date(currentDate);
+            const isSelectable = !isFutureDate;
+
+            return (
+              <button
+                key={date}
+                onClick={() => isSelectable ? selectCalendarDate(date) : null}
+                disabled={!isSelectable}
+                className={`
+                  aspect-square p-2 rounded-lg font-semibold transition-all relative
+                  ${hasData 
+                    ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
+                    : isSelectable 
+                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
+                      : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                  }
+                  ${isToday ? 'ring-2 ring-green-500' : ''}
+                `}
+                title={isFutureDate ? "Fecha futura - No editable" : hasData ? "Ver datos" : "Registrar día"}
+              >
+                {day}
+                {hasData && (
+                  <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full"></div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 text-sm text-gray-600 space-y-1">
+          <p>• <span className="text-blue-500 font-semibold">Azul</span>: Días con datos guardados</p>
+          <p>• <span className="text-gray-700 font-semibold">Gris claro</span>: Días disponibles para registrar</p>
+          <p>• <span className="text-gray-400 font-semibold">Gris oscuro</span>: Días futuros (solo lectura)</p>
+          <p>• <span className="text-green-500 font-semibold">Borde verde</span>: Día actual</p>
+          <p className="mt-2 font-semibold">💡 Haz click en cualquier día pasado para ver o registrar datos</p>
+        </div>
+      </div>
+    );
   };
 
   // Renderizar historial mensual
@@ -1771,15 +2196,7 @@ const App = () => {
                 <span>EXPORTAR DETALLE MENSUAL</span>
               </button>
 
-              <button
-                onClick={() => exportToExcel('monthly')}
-                className="w-full bg-purple-500 text-white py-3 rounded-lg font-semibold hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR RESÚMENES MENSUALES</span>
-              </button>
 
-              {/* NUEVO BOTÓN PARA EXPORTAR JSON */}
               <button
                 onClick={exportAllDataToJSON}
                 className="w-full bg-amber-500 text-white py-3 rounded-lg font-semibold hover:bg-amber-600 transition-colors flex items-center justify-center space-x-2"
@@ -1850,338 +2267,441 @@ const App = () => {
     );
   };
 
-  // Renderizar calendario
-  const renderCalendar = () => {
-    const days = generateCalendarDays();
-    const monthName = calendarMonth.toLocaleDateString('es-CO', { 
-      month: 'long', 
-      year: 'numeric' 
-    });
-    const weekDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    
-    return (
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">Historial</h2>
-          <button
-            onClick={() => setShowCalendar(false)}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
-          >
-            ✕
-          </button>
-        </div>
-        
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={() => changeMonth(-1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <h3 className="text-xl font-semibold capitalize">{monthName}</h3>
-          <button
-            onClick={() => changeMonth(1)}
-            className="p-2 hover:bg-gray-100 rounded-lg"
-          >
-            <ChevronRight size={24} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-7 gap-2 mb-2">
-          {weekDays.map(day => (
-            <div key={day} className="text-center font-semibold text-gray-600 text-sm">
-              {day}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-2">
-          {days.map((dayInfo, index) => {
-            if (!dayInfo) {
-              return <div key={`empty-${index}`} className="aspect-square"></div>;
-            }
-
-            const { day, date, hasData, isToday } = dayInfo;
-
-            return (
-              <button
-                key={date}
-                onClick={() => hasData ? viewHistoricalData(date) : null}
-                disabled={!hasData}
-                className={`
-                  aspect-square p-2 rounded-lg font-semibold transition-all
-                  ${hasData 
-                    ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }
-                  ${isToday ? 'ring-2 ring-green-500' : ''}
-                `}
-              >
-                {day}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 text-sm text-gray-600 space-y-1">
-          <p>• <span className="text-blue-500 font-semibold">Azul</span>: Días con datos guardados</p>
-          <p>• <span className="text-gray-400 font-semibold">Gris</span>: Días sin datos</p>
-          <p>• <span className="text-green-500 font-semibold">Borde verde</span>: Día actual</p>
-        </div>
-      </div>
-    );
-  };
-
   // Renderizar vista histórica
-  const renderHistoricalView = () => {
-    const data = editData || historicalData[selectedDate];
-    
-    const calculateMonthAccumulated = () => {
-      const monthKey = selectedDate.slice(0, 7);
-      const monthDays = Object.entries(historicalData)
-        .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
-        .sort((a, b) => a[0].localeCompare(b[0]));
-      
-      if (monthDays.length === 0) return { paso1: 0, paso2: 0, total: 0, porcentaje: 0 };
-      
-      const lastDay = monthDays[monthDays.length - 1][1];
-      const acum1 = lastDay.paso1.acumulado;
-      const acum2 = lastDay.paso2.acumulado;
-      const total = acum1 + acum2;
-      
-      let porcentaje = 0;
-      if (acum1 > 0 && acum2 > 0) {
-        const menor = Math.min(acum1, acum2);
-        const mayor = Math.max(acum1, acum2);
-        porcentaje = (menor / mayor) * 100;
-      }
-      
-      return { paso1: acum1, paso2: acum2, total, porcentaje };
-    };
-    
-    const calculateDayPercentage = () => {
-      const totalPaso1 = data.paso1.total || 0;
-      const totalPaso2 = data.paso2.total || 0;
-      
-      let porcentajeDia = 0;
-      if (totalPaso1 > 0 && totalPaso2 > 0) {
-        const menor = Math.min(totalPaso1, totalPaso2);
-        const mayor = Math.max(totalPaso1, totalPaso2);
-        porcentajeDia = (menor / mayor) * 100;
-      }
-      
-      return porcentajeDia;
-    };
-    
-    const monthAccumulated = calculateMonthAccumulated();
-    const dayPercentage = calculateDayPercentage();
-    
+const renderHistoricalView = () => {
+  // ✅ CORRECCIÓN: Si el día NO tiene datos, mostramos formulario para registrar
+  if (!selectedDate) {
     return (
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">
-            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </h2>
-          <button
-            onClick={() => {
-              setSelectedDate(null);
-              setIsEditing(false);
-              setEditData(null);
-            }}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-4 bg-amber-50 border-amber-200">
-              <h3 className="font-bold text-lg mb-3 text-amber-900">Porcentaje del DÍA</h3>
-              <div className="space-y-2 text-amber-600">
-                <p className="font-bold text-3xl text-center text-amber-700">
-                  {dayPercentage.toFixed(2)}%
-                </p>
-              </div>
-            </div>
-
-            <div className="border rounded-lg p-4 bg-purple-50 border-purple-200">
-              <h3 className="font-bold text-lg mb-3 text-purple-900">Porcentaje del MES</h3>
-              <div className="space-y-2 text-purple-900">
-                <p className="font-bold text-3xl text-center text-purple-700">
-                  {monthAccumulated.porcentaje.toFixed(2)}%
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-4 bg-blue-50">
-              <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
-              {isEditing ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(data.paso1.dato1)}
-                      onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
-                      className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(data.paso1.dato2)}
-                      onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
-                      className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="pt-2 border-t border-blue-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Acum. anterior:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1.acumuladoAnterior)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="pt-2 border-t border-blue-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1.total)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="border rounded-lg p-4 bg-green-50">
-              <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
-              {isEditing ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(data.paso2.dato1)}
-                      onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
-                      className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
-                    <input
-                      type="text"
-                      value={formatCurrency(data.paso2.dato2)}
-                      onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
-                      className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="pt-2 border-t border-green-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Acum. anterior:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2.acumuladoAnterior)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="pt-2 border-t border-green-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2.total)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <h3 className="font-bold text-lg mb-3 text-gray-900">Resumen Comparativo</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-600">Paso 1 - Total del día:</p>
-                <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1.total)}</p>
-                <p className="text-sm text-gray-600 mt-2">Paso 1 - Acum. del mes:</p>
-                <p className="font-bold text-xl text-blue-900">{formatCurrency(data.paso1.acumulado)}</p>
-              </div>
-              <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-600">Paso 2 - Total del día:</p>
-                <p className="font-bold text-lg text-green-900">{formatCurrency(data.paso2.total)}</p>
-                <p className="text-sm text-gray-600 mt-2">Paso 2 - Acum. del mes:</p>
-                <p className="font-bold text-xl text-green-900">{formatCurrency(data.paso2.acumulado)}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          {isEditing ? (
-            <div className="flex space-x-3">
-              <button
-                onClick={saveEdit}
-                className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Check size={20} />
-                <span>Guardar Cambios</span>
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <X size={20} />
-                <span>Cancelar</span>
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <button
-                onClick={() => startEditing(selectedDate)}
-                className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Edit2 size={20} />
-                <span>Editar Datos</span>
-              </button>
+      <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Error</h2>
               <button
                 onClick={() => {
                   setSelectedDate(null);
+                  setIsEditing(false);
                   setEditData(null);
-                  setShowCalendar(true);
                 }}
-                className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                className="text-gray-500 hover:text-gray-700 text-2xl"
               >
-                Volver al Calendario
+                ✕
               </button>
             </div>
-          )}
+            <p className="text-gray-600 text-center py-8">
+              No se ha seleccionado una fecha.
+            </p>
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setIsEditing(false);
+                setEditData(null);
+              }}
+              className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+            >
+              Volver
+            </button>
+          </div>
         </div>
       </div>
     );
+  }
+
+  // ✅ CORRECCIÓN: Verificar si estamos en modo registro de día nuevo
+  const isNewDay = !historicalData[selectedDate] && !editData;
+  
+  if (isNewDay) {
+    // MODO REGISTRO: Mostrar formulario para registrar día nuevo
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">
+                Registrar datos para el {selectedDate}
+              </h2>
+              <button
+                onClick={() => {
+                  setSelectedDate(null);
+                  setIsEditing(false);
+                  setEditData(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="mb-6 bg-blue-50 p-4 rounded-lg">
+              <p className="text-blue-800">
+                <span className="font-bold">📝 Estás registrando datos para:</span> {selectedDate}
+              </p>
+              <p className="text-sm text-blue-600 mt-1">
+                Esta fecha no tiene datos registrados. Completa los campos para guardar.
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              {/* Paso 1 - Datos básicos */}
+              <div className="border rounded-lg p-4 bg-blue-50">
+                <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(todayData.paso1?.dato1 || '')}
+                      onChange={(e) => handleInputChange('paso1', 'dato1', e.target.value)}
+                      className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      placeholder="$0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(todayData.paso1?.dato2 || '')}
+                      onChange={(e) => handleInputChange('paso1', 'dato2', e.target.value)}
+                      className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                      placeholder="$0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Paso 2 - Datos básicos */}
+              <div className="border rounded-lg p-4 bg-green-50">
+                <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(todayData.paso2?.dato1 || '')}
+                      onChange={(e) => handleInputChange('paso2', 'dato1', e.target.value)}
+                      className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                      placeholder="$0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                    <input
+                      type="text"
+                      value={formatCurrency(todayData.paso2?.dato2 || '')}
+                      onChange={(e) => handleInputChange('paso2', 'dato2', e.target.value)}
+                      className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                      placeholder="$0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen en tiempo real */}
+              <div className="border rounded-lg p-4 bg-purple-50">
+                <h3 className="font-bold text-lg mb-3 text-purple-900">Resumen del Día</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-3 rounded-lg">
+                    <p className="text-sm text-gray-600">Total Paso 1:</p>
+                    <p className="font-bold text-lg text-blue-900">
+                      {formatCurrency(todayData.paso1?.total || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg">
+                    <p className="text-sm text-gray-600">Total Paso 2:</p>
+                    <p className="font-bold text-lg text-green-900">
+                      {formatCurrency(todayData.paso2?.total || 0)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-purple-200">
+                  <p className="text-sm text-gray-600">Total del día:</p>
+                  <p className="font-bold text-2xl text-purple-900">
+                    {formatCurrency((todayData.paso1?.total || 0) + (todayData.paso2?.total || 0))}
+                  </p>
+                </div>
+              </div>
+
+              {/* Botones de acción */}
+              <div className="space-y-3">
+                <button
+                  onClick={saveData}
+                  className="w-full bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Save size={20} />
+                  <span>Guardar Datos</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedDate(null);
+                    setIsEditing(false);
+                    setEditData(null);
+                    setShowCalendar(true);
+                  }}
+                  className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                >
+                  Cancelar y volver al calendario
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // MODO LECTURA/EDICIÓN: Mostrar datos existentes
+  const data = editData || historicalData[selectedDate];
+  
+  // ✅ CORRECCIÓN: Función segura para calcular porcentaje del mes
+  const calculateMonthAccumulated = () => {
+    const monthKey = selectedDate.slice(0, 7);
+    const monthDays = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    
+    if (monthDays.length === 0) return { paso1: 0, paso2: 0, total: 0, porcentaje: 0 };
+    
+    const lastDay = monthDays[monthDays.length - 1][1];
+    const acum1 = lastDay.paso1?.acumulado || 0;
+    const acum2 = lastDay.paso2?.acumulado || 0;
+    const total = acum1 + acum2;
+    
+    let porcentaje = 0;
+    if (acum1 > 0 && acum2 > 0) {
+      const menor = Math.min(acum1, acum2);
+      const mayor = Math.max(acum1, acum2);
+      porcentaje = (menor / mayor) * 100;
+    }
+    
+    return { paso1: acum1, paso2: acum2, total, porcentaje };
   };
+  
+  // ✅ CORRECCIÓN: Función segura para calcular porcentaje del día
+  const calculateDayPercentage = () => {
+    if (!data || !data.paso1 || !data.paso2) return 0;
+    
+    const totalPaso1 = data.paso1.total || 0;
+    const totalPaso2 = data.paso2.total || 0;
+    
+    let porcentajeDia = 0;
+    if (totalPaso1 > 0 && totalPaso2 > 0) {
+      const menor = Math.min(totalPaso1, totalPaso2);
+      const mayor = Math.max(totalPaso1, totalPaso2);
+      porcentajeDia = (menor / mayor) * 100;
+    }
+    
+    return porcentajeDia;
+  };
+  
+  const monthAccumulated = calculateMonthAccumulated();
+  const dayPercentage = calculateDayPercentage();
+  
+  return (
+    <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">
+          {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </h2>
+        <button
+          onClick={() => {
+            setSelectedDate(null);
+            setIsEditing(false);
+            setEditData(null);
+          }}
+          className="text-gray-500 hover:text-gray-700 text-2xl"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border rounded-lg p-4 bg-amber-50 border-amber-200">
+            <h3 className="font-bold text-lg mb-3 text-amber-900">Porcentaje del DÍA</h3>
+            <div className="space-y-2 text-amber-600">
+              <p className="font-bold text-3xl text-center text-amber-700">
+                {dayPercentage.toFixed(2)}%
+              </p>
+            </div>
+          </div>
+
+          <div className="border rounded-lg p-4 bg-purple-50 border-purple-200">
+            <h3 className="font-bold text-lg mb-3 text-purple-900">Porcentaje del MES</h3>
+            <div className="space-y-2 text-purple-900">
+              <p className="font-bold text-3xl text-center text-purple-700">
+                {monthAccumulated.porcentaje.toFixed(2)}%
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border rounded-lg p-4 bg-blue-50">
+            <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
+            {isEditing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso1?.dato1 || '')}
+                    onChange={(e) => handleEditInputChange('paso1', 'dato1', e.target.value)}
+                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso1?.dato2 || '')}
+                    onChange={(e) => handleEditInputChange('paso1', 'dato2', e.target.value)}
+                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div className="pt-2 border-t border-blue-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Acum. anterior:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.acumuladoAnterior || 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="pt-2 border-t border-blue-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-lg p-4 bg-green-50">
+            <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
+            {isEditing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso2?.dato1 || '')}
+                    onChange={(e) => handleEditInputChange('paso2', 'dato1', e.target.value)}
+                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 2</label>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.paso2?.dato2 || '')}
+                    onChange={(e) => handleEditInputChange('paso2', 'dato2', e.target.value)}
+                    className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                  />
+                </div>
+                <div className="pt-2 border-t border-green-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Acum. anterior:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2?.acumuladoAnterior || 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="pt-2 border-t border-green-200">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs text-gray-600">Total del día:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <h3 className="font-bold text-lg mb-3 text-gray-900">Resumen Comparativo</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600">Paso 1 - Total del día:</p>
+              <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
+              <p className="text-sm text-gray-600 mt-2">Paso 1 - Acum. del mes:</p>
+              <p className="font-bold text-xl text-blue-900">{formatCurrency(data.paso1?.acumulado || 0)}</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600">Paso 2 - Total del día:</p>
+              <p className="font-bold text-lg text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
+              <p className="text-sm text-gray-600 mt-2">Paso 2 - Acum. del mes:</p>
+              <p className="font-bold text-xl text-green-900">{formatCurrency(data.paso2?.acumulado || 0)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {isEditing ? (
+          <div className="flex space-x-3">
+            <button
+              onClick={saveEdit}
+              className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Check size={20} />
+              <span>Guardar Cambios</span>
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <X size={20} />
+              <span>Cancelar</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <button
+              onClick={() => startEditing(selectedDate)}
+              className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Edit2 size={20} />
+              <span>Editar Datos</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setEditData(null);
+                setShowCalendar(true);
+              }}
+              className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+            >
+              Volver al Calendario
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
   if (loading) {
     return (
@@ -2252,6 +2772,11 @@ const App = () => {
                 {isLastDayOfMonth && (
                   <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
                     ⚠️ ¡ÚLTIMO DÍA DEL MES!
+                  </span>
+                )}
+                {selectedDate && selectedDate !== currentDate && (
+                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    📝 Registrando día pasado: {selectedDate}
                   </span>
                 )}
               </div>
@@ -2607,16 +3132,16 @@ const App = () => {
                     Total del día: <span className="font-bold">
                       {formatCurrency(
                         isDayCompleted && historicalData[currentDate] 
-                          ? historicalData[currentDate].paso1.total 
-                          : todayData.paso1.total || 0
+                          ? historicalData[currentDate].paso1?.total 
+                          : todayData.paso1?.total || 0
                       )}
                     </span>
                   </p>
                   <p className="text-blue-900 font-bold text-xl mt-2 pt-2 border-t border-blue-200">
                     Acumulado del mes: {formatCurrency(
                       isDayCompleted && historicalData[currentDate] 
-                        ? historicalData[currentDate].paso1.acumulado 
-                        : todayData.paso1.acumulado || 0
+                        ? historicalData[currentDate].paso1?.acumulado 
+                        : todayData.paso1?.acumulado || 0
                     )}
                   </p>
                 </div>
@@ -2627,16 +3152,16 @@ const App = () => {
                     Total del día: <span className="font-bold">
                       {formatCurrency(
                         isDayCompleted && historicalData[currentDate] 
-                          ? historicalData[currentDate].paso2.total 
-                          : todayData.paso2.total || 0
+                          ? historicalData[currentDate].paso2?.total 
+                          : todayData.paso2?.total || 0
                       )}
                     </span>
                   </p>
                   <p className="text-green-900 font-bold text-xl mt-2 pt-2 border-t border-green-200">
                     Acumulado del mes: {formatCurrency(
                       isDayCompleted && historicalData[currentDate] 
-                        ? historicalData[currentDate].paso2.acumulado 
-                        : todayData.paso2.acumulado || 0
+                        ? historicalData[currentDate].paso2?.acumulado 
+                        : todayData.paso2?.acumulado || 0
                     )}
                   </p>
                 </div>
@@ -2646,8 +3171,8 @@ const App = () => {
                   <p className="font-bold text-3xl text-purple-900">
                     {formatCurrency(
                       (isDayCompleted && historicalData[currentDate] 
-                        ? (historicalData[currentDate].paso1.total || 0) + (historicalData[currentDate].paso2.total || 0)
-                        : (todayData.paso1.total || 0) + (todayData.paso2.total || 0)
+                        ? (historicalData[currentDate].paso1?.total || 0) + (historicalData[currentDate].paso2?.total || 0)
+                        : (todayData.paso1?.total || 0) + (todayData.paso2?.total || 0)
                       )
                     )}
                   </p>
