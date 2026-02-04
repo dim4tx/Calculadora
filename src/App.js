@@ -1458,8 +1458,12 @@ const App = () => {
   // ===================== FUNCIÓN PARA SELECCIONAR FECHA EN CALENDARIO =====================
   const selectCalendarDate = (date) => {
     const data = historicalData[date];
+    const mesDeLaFecha = date.slice(0, 7);
     
-    if (data) {
+    // Verificar si es mes anterior (solo lectura)
+    if (mesDeLaFecha < currentMonth && data) {
+      viewHistoricalData(date);
+    } else if (data) {
       viewHistoricalData(date);
     } else {
       if (window.confirm(`¿Quieres registrar datos para el día ${date}?`)) {
@@ -1471,6 +1475,12 @@ const App = () => {
   // ===================== CONFIGURAR FECHA PARA REGISTRO =====================
   const setupDateForRegistration = (date) => {
     const selectedMonth = date.slice(0, 7);
+    
+    // Verificar si es mes anterior (no permitir registro)
+    if (selectedMonth < currentMonth) {
+      alert(`❌ No puedes registrar datos en meses anteriores.\n\nLa fecha ${date} pertenece a un mes pasado (${selectedMonth}).\n\n💡 Solo puedes registrar datos en el mes actual (${currentMonth}) o ver porcentajes de meses anteriores.`);
+      return;
+    }
     
     // SOLO busca días del MISMO MES (no toma datos de meses pasados)
     const diasDelMes = Object.entries(historicalData)
@@ -1522,6 +1532,8 @@ const App = () => {
   const saveData = async () => {
     try {
       const saveDate = selectedDate || currentDate;
+      const mesDelDia = saveDate.slice(0, 7);
+      
       console.log('💾 Guardando datos para el día:', saveDate);
       
       if (new Date(saveDate) > new Date()) {
@@ -1529,8 +1541,13 @@ const App = () => {
         return;
       }
       
+      // Verificar si es mes anterior (no permitir guardar)
+      if (mesDelDia < currentMonth) {
+        alert(`❌ No puedes guardar datos en meses anteriores.\n\nLa fecha ${saveDate} pertenece a un mes pasado (${mesDelDia}).\n\n💡 Solo puedes guardar datos en el mes actual (${currentMonth}).`);
+        return;
+      }
+      
       // SOLO días del MES del día que se está guardando
-      const mesDelDia = saveDate.slice(0, 7);
       const diasDelMes = Object.entries(historicalData)
         .filter(([date]) => date.startsWith(mesDelDia) && date < saveDate)
         .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
@@ -1651,6 +1668,14 @@ const App = () => {
   // Iniciar edición
   const startEditing = (date) => {
     const dataToEdit = historicalData[date];
+    const mesDeLaFecha = date.slice(0, 7);
+    
+    // Verificar si es mes anterior (no permitir edición)
+    if (mesDeLaFecha < currentMonth) {
+      alert(`❌ No puedes editar datos de meses anteriores.\n\nEl día ${date} pertenece a un mes pasado (${mesDeLaFecha}).\n\n💡 Solo puedes ver el porcentaje de días anteriores.`);
+      return;
+    }
+    
     setEditData({ ...dataToEdit });
     setIsEditing(true);
   };
@@ -1719,13 +1744,20 @@ const App = () => {
       const hasData = historicalData.hasOwnProperty(dateString);
       const isToday = dateString === currentDate;
       const isFutureDate = new Date(dateString) > new Date(currentDate);
+      const mesDeLaFecha = dateString.slice(0, 7);
+      const esMesAnterior = mesDeLaFecha < currentMonth;
+      const esMesActual = mesDeLaFecha === currentMonth;
+      const esMesFuturo = mesDeLaFecha > currentMonth;
       
       days.push({
         day,
         date: dateString,
         hasData,
         isToday,
-        isFutureDate
+        isFutureDate,
+        esMesAnterior,
+        esMesActual,
+        esMesFuturo
       });
     }
     
@@ -1792,30 +1824,60 @@ const App = () => {
               return <div key={`empty-${index}`} className="aspect-square"></div>;
             }
 
-            const { day, date, hasData, isToday, isFutureDate } = dayInfo;
+            const { day, date, hasData, isToday, isFutureDate, esMesAnterior, esMesActual } = dayInfo;
             
             const isSelectable = !isFutureDate;
+            let bgColor = 'bg-gray-100';
+            let textColor = 'text-gray-700';
+            let hoverColor = 'hover:bg-gray-200';
+            let cursor = 'cursor-pointer';
+            let titleText = 'Registrar día';
+            
+            if (hasData) {
+              if (esMesAnterior) {
+                bgColor = 'bg-amber-100';
+                textColor = 'text-amber-800';
+                hoverColor = 'hover:bg-amber-200';
+                titleText = 'Mes anterior - Solo ver porcentaje';
+              } else if (esMesActual) {
+                bgColor = 'bg-blue-500';
+                textColor = 'text-white';
+                hoverColor = 'hover:bg-blue-600';
+                titleText = 'Ver/editar datos';
+              }
+            } else if (esMesAnterior && !hasData) {
+              bgColor = 'bg-gray-100';
+              textColor = 'text-gray-400';
+              hoverColor = '';
+              cursor = 'cursor-not-allowed';
+              titleText = 'Mes anterior - Sin datos';
+            } else if (!isSelectable) {
+              bgColor = 'bg-gray-50';
+              textColor = 'text-gray-400';
+              hoverColor = '';
+              cursor = 'cursor-not-allowed';
+              titleText = 'Fecha futura';
+            }
 
             return (
               <button
                 key={date}
-                onClick={() => isSelectable ? selectCalendarDate(date) : null}
-                disabled={!isSelectable}
+                onClick={() => isSelectable && (!esMesAnterior || hasData) ? selectCalendarDate(date) : null}
+                disabled={!isSelectable || (esMesAnterior && !hasData)}
                 className={`
                   aspect-square p-2 rounded-lg font-semibold transition-all relative
-                  ${hasData 
-                    ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
-                    : isSelectable 
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
-                      : 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                  }
+                  ${bgColor} ${textColor} ${hoverColor} ${cursor}
                   ${isToday ? 'ring-2 ring-green-500' : ''}
                 `}
-                title={isFutureDate ? "Fecha futura - No editable" : hasData ? "Ver datos" : "Registrar día"}
+                title={titleText}
               >
                 {day}
                 {hasData && (
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full"></div>
+                  <div className="absolute top-1 right-1 w-2 h-2 rounded-full"
+                    style={{
+                      backgroundColor: esMesAnterior ? '#f59e0b' : '#ffffff'
+                    }}
+                  ></div>
                 )}
               </button>
             );
@@ -1823,21 +1885,20 @@ const App = () => {
         </div>
 
         <div className="mt-4 text-sm text-gray-600 space-y-1">
-          <p>• <span className="text-blue-500 font-semibold">Azul</span>: Días con datos guardados</p>
-          <p>• <span className="text-gray-700 font-semibold">Gris claro</span>: Días disponibles para registrar</p>
-          <p>• <span className="text-gray-400 font-semibold">Gris oscuro</span>: Días futuros (solo lectura)</p>
+          <p>• <span className="text-blue-500 font-semibold">Azul</span>: Días con datos (mes actual - editable)</p>
+          <p>• <span className="text-amber-500 font-semibold">Ámbar</span>: Mes anterior (solo ver porcentaje)</p>
+          <p>• <span className="text-gray-700 font-semibold">Gris oscuro</span>: Días disponibles para registrar</p>
+          <p>• <span className="text-gray-400 font-semibold">Gris claro</span>: Días futuros o meses anteriores sin datos</p>
           <p>• <span className="text-green-500 font-semibold">Borde verde</span>: Día actual</p>
-          <p className="mt-2 font-semibold">📅 Mes de {monthName} con {days.filter(d => d !== null).length} días reales</p>
-          <p className="mt-2 font-semibold">💡 Haz click en cualquier día pasado para ver o registrar datos</p>
         </div>
       </div>
     );
   };
 
-// ===================== RENDERIZAR HISTORIAL MENSUAL (MODIFICADO) =====================
-const renderMonthlyHistory = () => {
+  // ===================== RENDERIZAR HISTORIAL MENSUAL (MODIFICADO) =====================
+ const renderMonthlyHistory = () => {
   const months = Object.entries(monthlyData)
-    .filter(([monthKey]) => monthKey !== currentMonth) // ← FILTRA: NO mostrar el mes actual
+    .filter(([monthKey]) => monthKey !== currentMonth) // NO mostrar el mes actual
     .sort((a, b) => b[0].localeCompare(a[0]));
   
   return (
@@ -1933,7 +1994,6 @@ const renderMonthlyHistory = () => {
         </div>
       )}
       
-      {/* El resto del código permanece igual... */}
       <div className="mt-6 space-y-4">
         <div className="bg-gradient-to-r from-green-50 to-teal-50 border-l-4 border-green-500 p-4 rounded-lg">
           <h4 className="font-bold text-green-900 mb-3 text-lg">📤 Exportar Reportes</h4>
@@ -1964,86 +2024,43 @@ const renderMonthlyHistory = () => {
             </button>
           </div>
         </div>
-          
-          {/* NUEVO BOTÓN: Limpiar meses anteriores de la vista */}
-          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
-            <h4 className="font-bold text-yellow-900 mb-3 text-lg">🧹 Limpiar Historial de la Vista</h4>
-            <button
-              onClick={() => {
-                if (window.confirm(`¿Limpiar meses anteriores de la vista?\n\n✅ MANTENIDOS EN FIREBASE:\n• Datos diarios completos\n• Resúmenes mensuales\n• Backups futuros\n\n📋 LIMPIADOS SOLO DE LA VISTA:\n• Historial de meses en esta interfaz\n\n💡 Los datos seguirán disponibles en:\n1. Exportaciones Excel/JSON\n2. Firebase\n3. Backups futuros`)) {
-                  // Filtrar solo el mes actual
-                  const nuevoMonthlyData = {};
-                  const mesesAEliminar = [];
-                  
-                  // Guardar solo el mes actual
-                  if (monthlyData[currentMonth]) {
-                    nuevoMonthlyData[currentMonth] = monthlyData[currentMonth];
-                  }
-                  
-                  // Contar meses que se eliminarán
-                  for (const mes in monthlyData) {
-                    if (mes !== currentMonth) {
-                      mesesAEliminar.push(mes);
-                    }
-                  }
-                  
-                  if (mesesAEliminar.length === 0) {
-                    alert("ℹ️ No hay meses anteriores para limpiar.");
-                    return;
-                  }
-                  
-                  setMonthlyData(nuevoMonthlyData);
-                  
-                  alert(`✅ Historial limpiado exitosamente.\n\n📊 Meses removidos de la vista: ${mesesAEliminar.length}\n📈 Mes actual mantenido: ${currentMonth}\n💾 Datos preservados en Firebase para exportaciones.\n\n💡 Para ver todos los meses nuevamente, exporta un backup y reimporta los datos.`);
-                  
-                  setCloudStatus('💾 Historial limpiado - Datos en nube');
-                }
-              }}
-              className="w-full bg-yellow-500 text-white py-3 rounded-lg font-semibold hover:bg-yellow-600 transition-colors flex items-center justify-center space-x-2"
-            >
-              <span>LIMPIAR MESES ANTERIORES DE LA VISTA</span>
-            </button>
-            <p className="text-xs text-yellow-700 mt-2 text-center">
-              💡Los datos permanecen en Firebase y exportaciones.
-            </p>
+        
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <h4 className="font-bold text-blue-900 mb-2">📤 Importar Datos</h4>
+          <div className="flex space-x-4">
+            <label className="relative group flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
+              <span>📥 Importar desde JSON</span>
+              <input
+                type="file"
+                accept=".json,.txt"
+                onChange={importData}
+                className="hidden"
+              />
+            </label>
           </div>
-          
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-bold text-blue-900 mb-2">📤 Importar Datos</h4>
-            <div className="flex space-x-4">
-              <label className="relative group flex-1 bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 cursor-pointer">
-                <span>📥 Importar desde JSON</span>
-                <input
-                  type="file"
-                  accept=".json,.txt"
-                  onChange={importData}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            <p className="text-xs text-gray-600 mt-2 text-center">
-              💡 Solo archivos JSON exportados desde esta aplicación
-            </p>
-          </div>
-          
-          <div className="text-sm text-gray-500">
-            <p>📈 <strong>Estadísticas actuales:</strong></p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Meses registrados: {Object.keys(monthlyData).length}</li>
-              <li>Días registrados totales: {Object.keys(historicalData).length}</li>
-              <li>Último mes: {currentMonth}</li>
-              <li>Días registrados en el mes actual: {
-                Object.keys(historicalData).filter(date => date.startsWith(currentMonth)).length
-              }</li>
-            </ul>
-            <p className="mt-3">☁️ {cloudStatus}</p>
-          </div>
+          <p className="text-xs text-gray-600 mt-2 text-center">
+            💡 Solo archivos JSON exportados desde esta aplicación
+          </p>
+        </div>
+        
+        <div className="text-sm text-gray-500">
+          <p>📈 <strong>Estadísticas actuales:</strong></p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li>Meses registrados: {Object.keys(monthlyData).length}</li>
+            <li>Días registrados totales: {Object.keys(historicalData).length}</li>
+            <li>Último mes: {currentMonth}</li>
+            <li>Días registrados en el mes actual: {
+              Object.keys(historicalData).filter(date => date.startsWith(currentMonth)).length
+            }</li>
+          </ul>
+          <p className="mt-3">☁️ {cloudStatus}</p>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
-  // ===================== RENDERIZAR VISTA HISTÓRICA (SOLO PORCENTAJES) =====================
+  // ===================== RENDERIZAR VISTA HISTÓRICA (MODIFICADA) =====================
   const renderHistoricalView = () => {
     if (!selectedDate) {
       return (
@@ -2082,9 +2099,14 @@ const renderMonthlyHistory = () => {
       );
     }
 
-    const isNewDay = !historicalData[selectedDate] && !editData;
-    
-    if (isNewDay) {
+    const data = historicalData[selectedDate];
+    const mesDeLaFecha = selectedDate.slice(0, 7);
+    const esMesAnterior = mesDeLaFecha < currentMonth || data?.soloPorcentaje;
+    const esNuevoDia = !data && !editData;
+    const esMesActual = mesDeLaFecha === currentMonth;
+
+    // ========== SI ES NUEVO DÍA (SIN DATOS) ==========
+    if (esNuevoDia) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
           <div className="max-w-2xl mx-auto">
@@ -2218,8 +2240,108 @@ const renderMonthlyHistory = () => {
       );
     }
 
-    const data = editData || historicalData[selectedDate];
-    
+    // ========== SI ES MES ANTERIOR (SOLO PORCENTAJE) ==========
+    if (esMesAnterior) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </h2>
+                <button
+                  onClick={() => {
+                    setSelectedDate(null);
+                    setIsEditing(false);
+                    setEditData(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6 rounded-lg">
+                <p className="text-yellow-800 font-semibold">
+                  📊 Mes anterior optimizado
+                </p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Este día pertenece a un mes anterior. Solo se muestra el porcentaje para optimizar espacio.
+                </p>
+                <p className="text-sm text-yellow-600 mt-2">
+                  💡 Los datos completos están disponibles en exportaciones Excel/JSON.
+                </p>
+              </div>
+
+              <div className="space-y-6">
+                {/* PORCENTAJE DEL DÍA */}
+                <div className="border rounded-lg p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
+                  <div className="text-center">
+                    <p className="text-gray-600 mb-2">Porcentaje del día</p>
+                    <p className="font-bold text-5xl text-amber-700">
+                      {data?.porcentaje?.toFixed(2) || 0}%
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Relación entre Paso 1 y Paso 2
+                    </p>
+                  </div>
+                </div>
+
+                {/* INFORMACIÓN ADICIONAL */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="border rounded-lg p-4 bg-blue-50">
+                    <p className="text-sm text-gray-600">Mes</p>
+                    <p className="font-bold text-blue-900">{mesDeLaFecha}</p>
+                  </div>
+                  <div className="border rounded-lg p-4 bg-green-50">
+                    <p className="text-sm text-gray-600">Estado</p>
+                    <p className="font-bold text-green-900">Optimizado</p>
+                  </div>
+                </div>
+
+                {/* BOTÓN VOLVER */}
+                <button
+                  onClick={() => {
+                    setSelectedDate(null);
+                    setEditData(null);
+                    setShowCalendar(true);
+                  }}
+                  className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                >
+                  Volver al Calendario
+                </button>
+
+                <div className="text-center text-sm text-gray-500 mt-4">
+                  <p>📁 Los datos completos están disponibles en:</p>
+                  <div className="flex justify-center space-x-4 mt-2">
+                    <button
+                      onClick={() => exportToExcel('full')}
+                      className="text-blue-600 hover:text-blue-800 font-semibold"
+                    >
+                      Exportar Excel
+                    </button>
+                    <button
+                      onClick={exportAllDataToJSON}
+                      className="text-purple-600 hover:text-purple-800 font-semibold"
+                    >
+                      Exportar JSON
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== SI ES MES ACTUAL (COMPORTAMIENTO NORMAL) ==========
     const calculateMonthAccumulated = () => {
       const monthKey = selectedDate.slice(0, 7);
       const monthDays = Object.entries(historicalData)
