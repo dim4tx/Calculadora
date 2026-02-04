@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud, Trash2 } from 'lucide-react';
+import { Calendar, Save, ChevronRight, ChevronLeft, Edit2, X, Check, Download, Cloud } from 'lucide-react';
 import { db, auth } from './firebase';
 import { collection, doc, setDoc, getDocs, deleteDoc, getDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -52,7 +52,7 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
 
-  // ===================== FUNCIONES JSON SIMPLIFICADAS =====================
+  // ===================== FUNCIONES JSON =====================
   const exportAllDataToJSON = () => {
     try {
       const exportData = {
@@ -130,6 +130,7 @@ const App = () => {
         setHistoricalData(datosImportados);
         setMonthlyData(resumenesImportados);
         
+        // Si hay datos para hoy, cargarlos
         if (datosImportados[currentDate]) {
           const datosHoy = datosImportados[currentDate];
           setTodayData(datosHoy);
@@ -137,11 +138,15 @@ const App = () => {
           setCompletedSteps({ paso1: true, paso2: true });
           setCurrentView('resumen');
           
-          alert(`✅ Backup importado exitosamente!\n\n📊 Se encontraron datos para hoy (${currentDate}).\nLos datos se cargaron en modo solo lectura.`);
+          alert(`✅ Backup importado exitosamente!\n\n📊 Se encontraron datos para hoy (${currentDate}).`);
         } else {
-          const fechas = Object.keys(datosImportados).sort();
-          if (fechas.length > 0) {
-            const ultimaFecha = fechas[fechas.length - 1];
+          // Buscar el último día del MES ACTUAL importado
+          const diasDelMesActual = Object.keys(datosImportados)
+            .filter(date => date.startsWith(currentMonth) && date < currentDate)
+            .sort((a, b) => b.localeCompare(a));
+          
+          if (diasDelMesActual.length > 0) {
+            const ultimaFecha = diasDelMesActual[0];
             const ultimosDatos = datosImportados[ultimaFecha];
             
             setTodayData({
@@ -150,23 +155,45 @@ const App = () => {
                 dato1: '',
                 dato2: '',
                 total: 0,
-                acumuladoAnterior: ultimosDatos.paso1.acumulado || 0,
-                acumulado: ultimosDatos.paso1.acumulado || 0,
-                totalDiaAnterior: ultimosDatos.paso1.total || 0
+                acumuladoAnterior: ultimosDatos.paso1?.acumulado || 0,
+                acumulado: ultimosDatos.paso1?.acumulado || 0,
+                totalDiaAnterior: ultimosDatos.paso1?.total || 0
               },
               paso2: {
                 dato1: '',
                 dato2: '',
                 total: 0,
-                acumuladoAnterior: ultimosDatos.paso2.acumulado || 0,
-                acumulado: ultimosDatos.paso2.acumulado || 0,
-                totalDiaAnterior: ultimosDatos.paso2.total || 0
+                acumuladoAnterior: ultimosDatos.paso2?.acumulado || 0,
+                acumulado: ultimosDatos.paso2?.acumulado || 0,
+                totalDiaAnterior: ultimosDatos.paso2?.total || 0
               },
               porcentaje: 0
             });
             
-            alert(`✅ Backup importado exitosamente!\n\n📊 ${fechas.length} días importados.\n📅 Último día registrado: ${ultimaFecha}\n\n💡 Puedes continuar registrando desde hoy.`);
+            alert(`✅ Backup importado exitosamente!\n\n📊 ${Object.keys(datosImportados).length} días importados.\n📅 Último día del mes actual: ${ultimaFecha}`);
           } else {
+            // Si no hay datos del mes actual, empezar desde cero
+            setTodayData({
+              date: currentDate,
+              paso1: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: 0,
+                acumulado: 0,
+                totalDiaAnterior: 0
+              },
+              paso2: {
+                dato1: '',
+                dato2: '',
+                total: 0,
+                acumuladoAnterior: 0,
+                acumulado: 0,
+                totalDiaAnterior: 0
+              },
+              porcentaje: 0
+            });
+            
             alert(`✅ Backup importado exitosamente!\n\n💡 Puedes comenzar a registrar datos desde hoy.`);
           }
           
@@ -177,7 +204,7 @@ const App = () => {
         
         setCloudStatus('✅ Backup importado - Listo');
         
-        // Recargar datos desde Firebase para asegurar consistencia
+        // Recargar datos desde Firebase
         if (user) {
           setTimeout(async () => {
             try {
@@ -199,281 +226,7 @@ const App = () => {
     reader.readAsText(file);
   };
 
-  // ===================== FUNCIÓN NUEVA: EXPORTAR SOLO RESÚMENES MENSUALES REGISTRADOS =====================
-  const exportMonthlySummaries = () => {
-    try {
-      // Filtrar solo los meses que tienen datos consolidados en monthlyData
-      const mesesRegistrados = Object.keys(monthlyData)
-        .filter(monthKey => {
-          const data = monthlyData[monthKey];
-          return data && 
-                 (data.informacionConsolidada?.diasTotales > 0 || 
-                  data.totalesPorDia?.paso1 > 0 || 
-                  data.totalesPorDia?.paso2 > 0);
-        })
-        .sort();
-      
-      if (mesesRegistrados.length === 0) {
-        alert("ℹ️ No hay meses registrados para exportar. Los meses se registran automáticamente al final de cada mes o puedes consolidarlos desde el historial.");
-        return;
-      }
-      
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'Calculadora Diaria App';
-      workbook.created = new Date();
-      
-      const summarySheet = workbook.addWorksheet('Resumen Mensual General');
-      
-      // Configurar anchos de columna
-      summarySheet.getColumn(1).width = 15;
-      summarySheet.getColumn(2).width = 20;
-      summarySheet.getColumn(3).width = 20;
-      summarySheet.getColumn(4).width = 20;
-      summarySheet.getColumn(5).width = 20;
-      summarySheet.getColumn(6).width = 15;
-      
-      // Título
-      const titleRow = summarySheet.addRow(['RESUMEN DE MESES YA REGISTRADOS EN LA BASE DE DATOS']);
-      titleRow.font = { bold: true, size: 16, color: { argb: '1F4E78' } };
-      titleRow.alignment = { horizontal: 'center' };
-      summarySheet.mergeCells('A1:F1');
-      
-      // Información de exportación
-      summarySheet.addRow(['Fecha de exportación:', new Date().toLocaleDateString('es-CO')]);
-      summarySheet.addRow(['Total de meses registrados:', mesesRegistrados.length]);
-      summarySheet.addRow(['Estado del mes actual:', isDayCompleted ? '✅ Completado' : '⏳ En progreso']);
-      summarySheet.addRow([]);
-      
-      // Encabezados
-      const headers = summarySheet.addRow([
-        'Mes',
-        'Días Registrados',
-        'Total Paso 1',
-        'Total Paso 2',
-        'Total General',
-        'Porcentaje'
-      ]);
-      
-      headers.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: '7030A0' }
-        };
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
-        cell.alignment = { horizontal: 'center' };
-      });
-      
-      let totalDias = 0;
-      let totalPaso1 = 0;
-      let totalPaso2 = 0;
-      let totalGeneral = 0;
-      
-      // Agregar datos de cada mes
-      mesesRegistrados.forEach((monthKey, index) => {
-        const data = monthlyData[monthKey];
-        
-        const diasTotales = data.informacionConsolidada?.diasTotales || 0;
-        const totalMesPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
-        const totalMesPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
-        const totalMesGeneral = data.totalesPorDia?.general || (totalMesPaso1 + totalMesPaso2);
-        const porcentajeFinal = data.porcentajeFinal || 0;
-        
-        totalDias += diasTotales;
-        totalPaso1 += totalMesPaso1;
-        totalPaso2 += totalMesPaso2;
-        totalGeneral += totalMesGeneral;
-        
-        const row = summarySheet.addRow([
-          monthKey,
-          diasTotales,
-          totalMesPaso1,
-          totalMesPaso2,
-          totalMesGeneral,
-          porcentajeFinal / 100
-        ]);
-        
-        // Alternar colores de fila para mejor legibilidad
-        if (index % 2 === 0) {
-          row.eachCell((cell) => {
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'F2F2F2' }
-            };
-          });
-        }
-        
-        // Formato de números para las columnas de montos
-        [3, 4, 5].forEach(colIndex => {
-          const cell = row.getCell(colIndex);
-          cell.numFmt = '#,##0';
-        });
-        
-        // Formato de porcentaje
-        const porcentajeCell = row.getCell(6);
-        porcentajeCell.numFmt = '0.00%';
-      });
-      
-      // Agregar fila de totales
-      summarySheet.addRow([]);
-      const totalsRow = summarySheet.addRow([
-        'TOTALES',
-        totalDias,
-        totalPaso1,
-        totalPaso2,
-        totalGeneral,
-        ''
-      ]);
-      
-      totalsRow.font = { bold: true, color: { argb: 'FFFFFF' } };
-      totalsRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '2E75B6' }
-      };
-      
-      [3, 4, 5].forEach(colIndex => {
-        const cell = totalsRow.getCell(colIndex);
-        cell.numFmt = '#,##0';
-      });
-      
-      // Hoja de detalle por mes
-      const detailSheet = workbook.addWorksheet('Detalle por Mes');
-      
-      // Configurar anchos de columna
-      detailSheet.getColumn(1).width = 20;
-      detailSheet.getColumn(2).width = 15;
-      detailSheet.getColumn(3).width = 15;
-      detailSheet.getColumn(4).width = 15;
-      detailSheet.getColumn(5).width = 15;
-      detailSheet.getColumn(6).width = 20;
-      detailSheet.getColumn(7).width = 20;
-      detailSheet.getColumn(8).width = 20;
-      
-      // Agregar datos detallados por mes
-      mesesRegistrados.forEach((monthKey) => {
-        const data = monthlyData[monthKey];
-        
-        // Título del mes
-        const monthTitleRow = detailSheet.addRow([
-          `MES: ${monthKey} - ${data.informacionConsolidada?.diasTotales || 0} días registrados`
-        ]);
-        monthTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
-        detailSheet.mergeCells(`A${detailSheet.rowCount}:H${detailSheet.rowCount}`);
-        
-        // Encabezados de días
-        const dayHeaders = detailSheet.addRow([
-          'Fecha',
-          'Día',
-          'P1 Dato 1',
-          'P1 Dato 2',
-          'P1 Total',
-          'P2 Dato 1',
-          'P2 Dato 2',
-          'P2 Total'
-        ]);
-        
-        dayHeaders.eachCell((cell) => {
-          cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: '4472C4' }
-          };
-        });
-        
-        // Agregar datos de cada día del mes
-        if (data.diasRegistrados && data.diasRegistrados.length > 0) {
-          data.diasRegistrados.forEach((dia, diaIndex) => {
-            const fecha = new Date(dia.fecha + 'T00:00:00');
-            const diaSemana = fecha.toLocaleDateString('es-CO', { weekday: 'short' });
-            
-            const row = detailSheet.addRow([
-              dia.fecha,
-              diaSemana,
-              dia.paso1?.dato1 || 0,
-              dia.paso1?.dato2 || 0,
-              dia.paso1?.totalDia || 0,
-              dia.paso2?.dato1 || 0,
-              dia.paso2?.dato2 || 0,
-              dia.paso2?.totalDia || 0
-            ]);
-            
-            // Alternar colores
-            if (diaIndex % 2 === 0) {
-              row.eachCell((cell, colNumber) => {
-                if (colNumber >= 1 && colNumber <= 8) {
-                  cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'E6F0FF' }
-                  };
-                }
-              });
-            }
-            
-            // Formato numérico
-            [3, 4, 5, 6, 7, 8].forEach(colIndex => {
-              const cell = row.getCell(colIndex);
-              cell.numFmt = '#,##0';
-            });
-          });
-          
-          // Agregar totales del mes
-          const mesTotalsRow = detailSheet.addRow([
-            `TOTAL ${monthKey}:`,
-            '',
-            `=SUM(C${detailSheet.rowCount - data.diasRegistrados.length}:C${detailSheet.rowCount - 1})`,
-            `=SUM(D${detailSheet.rowCount - data.diasRegistrados.length}:D${detailSheet.rowCount - 1})`,
-            `=SUM(E${detailSheet.rowCount - data.diasRegistrados.length}:E${detailSheet.rowCount - 1})`,
-            `=SUM(F${detailSheet.rowCount - data.diasRegistrados.length}:F${detailSheet.rowCount - 1})`,
-            `=SUM(G${detailSheet.rowCount - data.diasRegistrados.length}:G${detailSheet.rowCount - 1})`,
-            `=SUM(H${detailSheet.rowCount - data.diasRegistrados.length}:H${detailSheet.rowCount - 1})`
-          ]);
-          
-          mesTotalsRow.font = { bold: true };
-          mesTotalsRow.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFF2CC' }
-          };
-          
-          [3, 4, 5, 6, 7, 8].forEach(colIndex => {
-            const cell = mesTotalsRow.getCell(colIndex);
-            cell.numFmt = '#,##0';
-          });
-          
-          detailSheet.addRow([]);
-          detailSheet.addRow([]);
-        }
-      });
-      
-      // Guardar el archivo
-      workbook.xlsx.writeBuffer().then(buffer => {
-        const blob = new Blob([buffer], { 
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-        });
-        
-        const fileName = `resumen_meses_registrados_${currentDate}.xlsx`;
-        saveAs(blob, fileName);
-        
-        alert(`✅ Resumen de meses registrados exportado exitosamente.\n\n📊 ${mesesRegistrados.length} meses exportados\n📁 Archivo: ${fileName}\n\n💡 Este archivo contiene SOLO los meses que ya están completados y registrados en la base de datos.`);
-      });
-      
-    } catch (error) {
-      console.error('Error al exportar resúmenes mensuales:', error);
-      alert('❌ Error al exportar los resúmenes mensuales.');
-    }
-  };
-
-  // ===================== FUNCIÓN PRINCIPAL PARA EXPORTAR A EXCEL =====================
+  // ===================== FUNCIÓN PARA EXPORTAR A EXCEL =====================
   const exportToExcel = (type = 'full') => {
     try {
       if (type === 'monthly' && (!monthlyData || Object.keys(monthlyData).length === 0)) {
@@ -1012,13 +765,33 @@ const App = () => {
       if (newMonth !== currentMonth) {
         console.log(`🔄 ¡Cambió el mes! De ${currentMonth} a ${newMonth}`);
         
+        // Guardar automáticamente el resumen del mes anterior
+        if (Object.keys(historicalData).some(date => date.startsWith(currentMonth))) {
+          saveMonthSummary(currentMonth);
+        }
+        
         setCurrentMonth(newMonth);
         
+        // Reiniciar para el nuevo mes (acumulados en CERO - NO toma datos de meses pasados)
         setTodayData(prev => ({
           ...prev,
           date: currentDate,
-          paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
-          paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
+          paso1: { 
+            dato1: '', 
+            dato2: '', 
+            total: 0, 
+            acumuladoAnterior: 0,
+            acumulado: 0,
+            totalDiaAnterior: 0 
+          },
+          paso2: { 
+            dato1: '', 
+            dato2: '', 
+            total: 0, 
+            acumuladoAnterior: 0,
+            acumulado: 0,
+            totalDiaAnterior: 0 
+          },
           porcentaje: 0
         }));
         
@@ -1026,7 +799,10 @@ const App = () => {
         setCompletedSteps({ paso1: false, paso2: false });
         setCurrentView('paso1');
         
-        alert(`📅 ¡Nuevo mes comenzado! (${newMonth})\n\nLos acumulados se han reiniciado a CERO.\nPuedes comenzar a registrar datos del nuevo mes.\n\n💡 El mes anterior (${currentMonth}) sigue disponible para exportar desde el historial.`);
+        alert(`📅 ¡Nuevo mes comenzado! (${newMonth})\n\n` +
+              `✅ El mes anterior (${currentMonth}) se guardó en el historial.\n` +
+              `📊 Los acumulados comienzan desde CERO (no se toman datos de meses pasados).\n` +
+              `💡 Puedes ver meses anteriores en el historial.`);
       }
     };
     
@@ -1035,104 +811,6 @@ const App = () => {
     
     return () => clearInterval(interval);
   }, [currentDate, currentMonth]);
-
-  // ===================== FUNCIÓN MEJORADA: RESETEAR MES ACTUAL =====================
-  const resetCurrentMonth = async () => {
-    const confirmReset = window.confirm(
-      `⚠️ ¿REINICIAR MES ${currentMonth}?\n\n` +
-      `Esta acción eliminará SOLO los datos del mes ${currentMonth}:\n` +
-      `• Todos los días registrados en ${currentMonth}\n` +
-      `• Los acumulados actuales de ${currentMonth}\n\n` +
-      '🚫 NO se eliminarán:\n' +
-      '• Meses anteriores (quedan en historial)\n' +
-      '• Resúmenes mensuales anteriores\n\n' +
-      'Después del reinicio:\n' +
-      `• Comenzarás ${currentMonth} desde CERO\n` +
-      '• Podrás registrar nuevos datos normalmente\n' +
-      '• Los meses anteriores seguirán disponibles\n\n' +
-      '¿Continuar?'
-    );
-
-    if (!confirmReset) return;
-
-    try {
-      setLoading(true);
-      setCloudStatus(`🔄 Reiniciando mes ${currentMonth}...`);
-
-      if (user) {
-        try {
-          const monthDays = Object.keys(historicalData).filter(date => 
-            date.startsWith(currentMonth)
-          );
-          
-          console.log(`🗑️ Eliminando ${monthDays.length} días del mes ${currentMonth} de Firebase`);
-          
-          for (const date of monthDays) {
-            await deleteFromFirebase('historicalData', date);
-          }
-          
-          console.log(`✅ Datos del mes ${currentMonth} eliminados de Firebase`);
-          
-          if (monthlyData[currentMonth]) {
-            await deleteFromFirebase('monthlyData', currentMonth);
-            console.log(`✅ Resumen del mes ${currentMonth} eliminado de Firebase`);
-          }
-          
-        } catch (firebaseError) {
-          console.warn(`⚠️ No se pudieron eliminar datos del mes ${currentMonth}:`, firebaseError);
-        }
-      }
-
-      const newHistoricalData = {};
-      Object.entries(historicalData).forEach(([date, data]) => {
-        if (!date.startsWith(currentMonth)) {
-          newHistoricalData[date] = data;
-        }
-      });
-      setHistoricalData(newHistoricalData);
-
-      const newMonthlyData = {};
-      Object.entries(monthlyData).forEach(([month, data]) => {
-        if (month !== currentMonth) {
-          newMonthlyData[month] = data;
-        }
-      });
-      setMonthlyData(newMonthlyData);
-
-      setTodayData({
-        date: currentDate,
-        paso1: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
-        paso2: { dato1: '', dato2: '', total: 0, acumuladoAnterior: 0, acumulado: 0, totalDiaAnterior: 0 },
-        porcentaje: 0
-      });
-      
-      setIsDayCompleted(false);
-      setCompletedSteps({ paso1: false, paso2: false });
-      setCurrentView('paso1');
-      
-      setSelectedDate(null);
-      setIsEditing(false);
-      setEditData(null);
-
-      setCloudStatus(`✅ Mes ${currentMonth} reiniciado - Listo para comenzar`);
-      
-      alert(`✅ Mes ${currentMonth} reiniciado exitosamente\n\n` +
-            `Los datos de ${currentMonth} han sido eliminados.\n` +
-            `Ahora puedes registrar nuevos datos desde HOY.\n\n` +
-            `📊 Los meses anteriores siguen disponibles en:\n` +
-            `• Historial de Meses\n` +
-            `• Calendario\n` +
-            `• Exportar Excel`);
-
-      setLoading(false);
-
-    } catch (error) {
-      console.error(`❌ Error al reiniciar el mes ${currentMonth}:`, error);
-      setCloudStatus(`❌ Error al reiniciar mes`);
-      alert('❌ Hubo un error al intentar reiniciar el mes.\nPor favor, intenta nuevamente.');
-      setLoading(false);
-    }
-  };
 
   // 🆕 Efecto para actualizar todayData cuando se carga historicalData
   useEffect(() => {
@@ -1158,7 +836,7 @@ const App = () => {
           acumulado: dayData.paso2?.acumulado || 0,
           totalDiaAnterior: dayData.paso2?.totalDiaAnterior || 0
         },
-        porcentaje: dayData.porcentaje || 0
+        porcentaje: 0
       });
       
       setIsDayCompleted(true);
@@ -1476,30 +1154,24 @@ const App = () => {
     }
   };
 
-  // Función para obtener el día anterior
-  const getPreviousDay = (dateString) => {
-    const date = new Date(dateString + 'T00:00:00');
-    date.setDate(date.getDate() - 1);
-    return date.toISOString().split('T')[0];
-  };
-
-  // 🆕 CORRECCIÓN: Cargar datos del día anterior - SOLO DEL MISMO MES
+  // ===================== FUNCIÓN MODIFICADA: Cargar datos del día anterior - SOLO DEL MES ACTUAL =====================
   const loadPreviousDayData = () => {
     try {
-      console.log('🔄 Cargando datos del día anterior del mes actual...');
+      console.log('🔄 Cargando datos del día anterior SOLO del mes actual...');
       
-      const diasDelMes = Object.entries(historicalData)
-        .filter(([date]) => date.startsWith(currentMonth) && date < currentDate)
+      // SOLO días del MES ACTUAL
+      const diasDelMesActual = Object.entries(historicalData)
+        .filter(([date]) => {
+          // Solo días del mes actual que sean anteriores a hoy
+          return date.startsWith(currentMonth) && date < currentDate;
+        })
         .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
       
-      console.log('Días disponibles del mes actual:', diasDelMes.map(([date]) => date));
+      console.log('Días anteriores en mes actual:', diasDelMesActual.map(([date]) => date));
       
-      if (diasDelMes.length > 0) {
-        const [fechaAnterior, datosAnterior] = diasDelMes[0];
-        console.log('📅 Último día del mes con datos:', fechaAnterior);
-        
-        const totalDiaAnteriorPaso1 = datosAnterior.paso1?.total || 0;
-        const totalDiaAnteriorPaso2 = datosAnterior.paso2?.total || 0;
+      if (diasDelMesActual.length > 0) {
+        const [fechaAnterior, datosAnterior] = diasDelMesActual[0];
+        console.log('📅 Último día del mes actual con datos:', fechaAnterior);
         
         setTodayData(prev => ({
           ...prev,
@@ -1508,26 +1180,25 @@ const App = () => {
             dato1: '',
             dato2: '',
             total: 0,
+            // SOLO acumulado del mes actual (NO de meses pasados)
             acumuladoAnterior: datosAnterior.paso1?.acumulado || 0,
             acumulado: datosAnterior.paso1?.acumulado || 0,
-            totalDiaAnterior: totalDiaAnteriorPaso1
+            totalDiaAnterior: datosAnterior.paso1?.total || 0
           },
           paso2: {
             dato1: '',
             dato2: '',
             total: 0,
+            // SOLO acumulado del mes actual (NO de meses pasados)
             acumuladoAnterior: datosAnterior.paso2?.acumulado || 0,
             acumulado: datosAnterior.paso2?.acumulado || 0,
-            totalDiaAnterior: totalDiaAnteriorPaso2
+            totalDiaAnterior: datosAnterior.paso2?.total || 0
           },
           porcentaje: 0
         }));
         
-        console.log('✅ Acumulados cargados correctamente desde:', fechaAnterior, {
-          totalDiaAnteriorPaso1,
-          totalDiaAnteriorPaso2
-        });
       } else {
+        // Si no hay días en el mes actual, empezar desde CERO
         console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
         setTodayData(prev => ({
           ...prev,
@@ -1536,7 +1207,7 @@ const App = () => {
             dato1: '', 
             dato2: '', 
             total: 0, 
-            acumuladoAnterior: 0, 
+            acumuladoAnterior: 0,
             acumulado: 0,
             totalDiaAnterior: 0 
           },
@@ -1544,7 +1215,7 @@ const App = () => {
             dato1: '', 
             dato2: '', 
             total: 0, 
-            acumuladoAnterior: 0, 
+            acumuladoAnterior: 0,
             acumulado: 0,
             totalDiaAnterior: 0 
           },
@@ -1801,6 +1472,7 @@ const App = () => {
   const setupDateForRegistration = (date) => {
     const selectedMonth = date.slice(0, 7);
     
+    // SOLO busca días del MISMO MES (no toma datos de meses pasados)
     const diasDelMes = Object.entries(historicalData)
       .filter(([d]) => d.startsWith(selectedMonth) && d < date)
       .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
@@ -1813,6 +1485,7 @@ const App = () => {
       acumuladoAnteriorPaso1 = ultimoDia.paso1?.acumulado || 0;
       acumuladoAnteriorPaso2 = ultimoDia.paso2?.acumulado || 0;
     }
+    // Si no hay días en ese mes, empieza desde CERO
     
     const newTodayData = {
       date: date,
@@ -1842,7 +1515,7 @@ const App = () => {
     setSelectedDate(date);
     setShowCalendar(false);
     
-    alert(`✅ Listo para registrar datos del ${date}\n\n📊 Acumulados cargados desde día anterior del mismo mes.`);
+    alert(`✅ Listo para registrar datos del ${date}\n\n📊 Acumulados cargados SOLO de días anteriores del mismo mes.`);
   };
 
   // ===================== GUARDAR DATOS DEL DÍA (SOPORTA DÍAS PASADOS) =====================
@@ -1856,8 +1529,10 @@ const App = () => {
         return;
       }
       
+      // SOLO días del MES del día que se está guardando
+      const mesDelDia = saveDate.slice(0, 7);
       const diasDelMes = Object.entries(historicalData)
-        .filter(([date]) => date.startsWith(saveDate.slice(0, 7)) && date < saveDate)
+        .filter(([date]) => date.startsWith(mesDelDia) && date < saveDate)
         .sort(([dateA], [dateB]) => dateB.localeCompare(dateA));
       
       let acumuladoAnteriorPaso1 = 0;
@@ -1867,14 +1542,8 @@ const App = () => {
         const ultimoDia = diasDelMes[0][1];
         acumuladoAnteriorPaso1 = ultimoDia.paso1?.acumulado || 0;
         acumuladoAnteriorPaso2 = ultimoDia.paso2?.acumulado || 0;
-        
-        console.log('📊 Acumulado anterior encontrado del día:', diasDelMes[0][0], {
-          paso1: acumuladoAnteriorPaso1,
-          paso2: acumuladoAnteriorPaso2
-        });
-      } else {
-        console.log('ℹ️ No hay días anteriores en el mes actual, comenzando desde cero');
       }
+      // Si no hay días, empieza en CERO (NO toma acumulado de meses pasados)
       
       const totalDiaPaso1 = parseFloat(todayData.paso1.dato1 || 0) + parseFloat(todayData.paso1.dato2 || 0);
       const totalDiaPaso2 = parseFloat(todayData.paso2.dato1 || 0) + parseFloat(todayData.paso2.dato2 || 0);
@@ -2028,13 +1697,14 @@ const App = () => {
     setShowCalendar(false);
   };
 
-  // Generar días del mes para el calendario
+  // ===================== CALENDARIO CORREGIDO: DÍAS REALES POR MES =====================
   const generateCalendarDays = () => {
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
     
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay();
     
     const days = [];
@@ -2043,17 +1713,19 @@ const App = () => {
       days.push(null);
     }
     
-    for (let day = 1; day <= lastDay.getDate(); day++) {
+    for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
       const dateString = date.toISOString().split('T')[0];
       const hasData = historicalData.hasOwnProperty(dateString);
       const isToday = dateString === currentDate;
+      const isFutureDate = new Date(dateString) > new Date(currentDate);
       
       days.push({
         day,
         date: dateString,
         hasData,
-        isToday
+        isToday,
+        isFutureDate
       });
     }
     
@@ -2120,9 +1792,8 @@ const App = () => {
               return <div key={`empty-${index}`} className="aspect-square"></div>;
             }
 
-            const { day, date, hasData, isToday } = dayInfo;
+            const { day, date, hasData, isToday, isFutureDate } = dayInfo;
             
-            const isFutureDate = new Date(date) > new Date(currentDate);
             const isSelectable = !isFutureDate;
 
             return (
@@ -2156,159 +1827,184 @@ const App = () => {
           <p>• <span className="text-gray-700 font-semibold">Gris claro</span>: Días disponibles para registrar</p>
           <p>• <span className="text-gray-400 font-semibold">Gris oscuro</span>: Días futuros (solo lectura)</p>
           <p>• <span className="text-green-500 font-semibold">Borde verde</span>: Día actual</p>
+          <p className="mt-2 font-semibold">📅 Mes de {monthName} con {days.filter(d => d !== null).length} días reales</p>
           <p className="mt-2 font-semibold">💡 Haz click en cualquier día pasado para ver o registrar datos</p>
         </div>
       </div>
     );
   };
 
-  // Renderizar historial mensual
-  const renderMonthlyHistory = () => {
-    const months = Object.entries(monthlyData).sort((a, b) => b[0].localeCompare(a[0]));
-    
-    return (
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">📊 Historial de Meses</h2>
-          <div className="flex space-x-2">
+// ===================== RENDERIZAR HISTORIAL MENSUAL (MODIFICADO) =====================
+const renderMonthlyHistory = () => {
+  const months = Object.entries(monthlyData)
+    .filter(([monthKey]) => monthKey !== currentMonth) // ← FILTRA: NO mostrar el mes actual
+    .sort((a, b) => b[0].localeCompare(a[0]));
+  
+  return (
+    <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">📊 Historial de Meses Completados</h2>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => setShowMonthlyHistory(false)}
+            className="text-gray-500 hover:text-gray-700 text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+      
+      {months.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-gray-500 mb-4">No hay meses completados aún</p>
+          <p className="text-sm text-gray-600">
+            El mes actual ({currentMonth}) no aparece aquí porque está en curso.
+          </p>
+          <p className="text-sm text-gray-600 mt-1">
+            Aparecerá automáticamente cuando se complete el mes.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {months.map(([monthKey, data]) => {
+            if (!data) return null;
+            
+            const diasTotales = data.informacionConsolidada?.diasTotales || 0;
+            const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
+            const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
+            const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
+            const porcentaje = data.porcentajeFinal || 0;
+
+            return (
+              <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-bold text-lg">
+                    {monthKey}
+                  </h3>
+                  <div className="flex space-x-2">
+                    {/* SOLO mostrar botón "Exportar mes" para MESES PASADOS */}
+                    <button
+                      onClick={() => exportMonthToExcel(monthKey)}
+                      className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
+                    >
+                      Exportar mes
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                  <div>
+                    <p className="text-gray-600">Días registrados:</p>
+                    <p className="font-bold text-lg">{diasTotales}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Total Paso 1:</p>
+                    <p className="font-bold text-blue-900">{formatCurrency(totalPaso1)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Total Paso 2:</p>
+                    <p className="font-bold text-green-900">{formatCurrency(totalPaso2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Total General:</p>
+                    <p className="font-bold text-purple-900 text-lg">{formatCurrency(totalGeneral)}</p>
+                  </div>
+                </div>
+                
+                <div className="border-t pt-3 mt-3">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-600">Acumulado Paso 1:</p>
+                      <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral?.paso1 || totalPaso1)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Acumulado Paso 2:</p>
+                      <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral?.paso2 || totalPaso2)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-center">
+                    <p className="text-gray-600">Porcentaje final:</p>
+                    <p className="font-bold text-2xl text-purple-900">{porcentaje.toFixed(2)}%</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      
+      {/* El resto del código permanece igual... */}
+      <div className="mt-6 space-y-4">
+        <div className="bg-gradient-to-r from-green-50 to-teal-50 border-l-4 border-green-500 p-4 rounded-lg">
+          <h4 className="font-bold text-green-900 mb-3 text-lg">📤 Exportar Reportes</h4>
+          
+          <div className="space-y-2">
             <button
-              onClick={() => setShowMonthlyHistory(false)}
-              className="text-gray-500 hover:text-gray-700 text-2xl"
+              onClick={() => exportToExcel('full')}
+              className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
             >
-              ✕
+              <Download size={20} />
+              <span>EXPORTAR REPORTE COMPLETO</span>
+            </button>
+            
+            <button
+              onClick={() => exportToExcel('daily')}
+              className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Download size={20} />
+              <span>EXPORTAR DETALLE DIARIO</span>
+            </button>
+            
+            <button
+              onClick={exportAllDataToJSON}
+              className="w-full bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2"
+            >
+              <Download size={20} />
+              <span>EXPORTAR BACKUP (JSON)</span>
             </button>
           </div>
         </div>
-        
-        {months.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No hay meses completados aún</p>
-        ) : (
-          <div className="space-y-6">
-            {months
-              .filter(([monthKey]) => {
-                const isCurrentMonth = monthKey === currentMonth;
-                const hasMonthData = monthlyData[monthKey];
-                return hasMonthData && !(isCurrentMonth && !isDayCompleted);
-              })
-              .map(([monthKey, data]) => {
-                if (!data) return null;
-                
-                const diasTotales = data.informacionConsolidada?.diasTotales || 0;
-                const totalPaso1 = data.totalesPorDia?.paso1 || data.acumuladoGeneral?.paso1 || 0;
-                const totalPaso2 = data.totalesPorDia?.paso2 || data.acumuladoGeneral?.paso2 || 0;
-                const totalGeneral = data.totalesPorDia?.general || (totalPaso1 + totalPaso2);
-                const porcentaje = data.porcentajeFinal || 0;
-
-                return (
-                  <div key={monthKey} className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-purple-50">
-                    <div className="flex justify-between items-center mb-3">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => exportMonthToExcel(monthKey)}
-                          className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200 transition-colors"
-                        >
-                          Exportar mes
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                      <div>
-                        <p className="text-gray-600">Días registrados:</p>
-                        <p className="font-bold text-lg">{diasTotales}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Total Paso 1:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(totalPaso1)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Total Paso 2:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(totalPaso2)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-600">Total General:</p>
-                        <p className="font-bold text-purple-900 text-lg">{formatCurrency(totalGeneral)}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t pt-3 mt-3">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-gray-600">Acumulado Paso 1:</p>
-                          <p className="font-bold text-blue-900">{formatCurrency(data.acumuladoGeneral?.paso1 || totalPaso1)}</p>
-                        </div>
-                        <div>
-                          <p className="text-gray-600">Acumulado Paso 2:</p>
-                          <p className="font-bold text-green-900">{formatCurrency(data.acumuladoGeneral?.paso2 || totalPaso2)}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 text-center">
-                        <p className="text-gray-600">Porcentaje final:</p>
-                        <p className="font-bold text-2xl text-purple-900">{porcentaje.toFixed(2)}%</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        )}
-        
-        <div className="mt-6 space-y-4">
-          <div className="bg-gradient-to-r from-green-50 to-teal-50 border-l-4 border-green-500 p-4 rounded-lg">
-            <h4 className="font-bold text-green-900 mb-3 text-lg">📤 Exportar Reportes</h4>
-            
-            <div className="space-y-2">
-              <button
-                onClick={() => exportToExcel('full')}
-                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR REPORTE COMPLETO</span>
-              </button>
-              
-              <button
-                onClick={() => exportToExcel('daily')}
-                className="w-full bg-blue-500 text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR DETALLE DIARIO</span>
-              </button>
-              
-              <button
-                onClick={exportAllDataToJSON}
-                className="w-full bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Download size={20} />
-                <span>EXPORTAR BACKUP (JSON)</span>
-              </button>
-            </div>
-          </div>
           
-          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-            <h4 className="font-bold text-red-900 mb-2">⚠️ Reiniciar mes actual</h4>
-            <p className="text-sm text-red-700 mb-2">
-              <strong>Esta acción eliminará SOLO los datos del mes actual ({currentMonth}):</strong>
-            </p>
-            <ul className="text-sm text-red-700 list-disc pl-5 mb-3">
-              <li>Días registrados en {currentMonth}</li>
-              <li>Acumulados de {currentMonth}</li>
-            </ul>
-            <p className="text-sm text-red-700 mb-3">
-              <strong>NO se eliminarán:</strong>
-              <br/>
-              • Meses anteriores (quedan en historial)
-              <br/>
-              • Resúmenes mensuales anteriores
-            </p>
+          {/* NUEVO BOTÓN: Limpiar meses anteriores de la vista */}
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+            <h4 className="font-bold text-yellow-900 mb-3 text-lg">🧹 Limpiar Historial de la Vista</h4>
             <button
-              onClick={resetCurrentMonth}
-              className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center space-x-2"
+              onClick={() => {
+                if (window.confirm(`¿Limpiar meses anteriores de la vista?\n\n✅ MANTENIDOS EN FIREBASE:\n• Datos diarios completos\n• Resúmenes mensuales\n• Backups futuros\n\n📋 LIMPIADOS SOLO DE LA VISTA:\n• Historial de meses en esta interfaz\n\n💡 Los datos seguirán disponibles en:\n1. Exportaciones Excel/JSON\n2. Firebase\n3. Backups futuros`)) {
+                  // Filtrar solo el mes actual
+                  const nuevoMonthlyData = {};
+                  const mesesAEliminar = [];
+                  
+                  // Guardar solo el mes actual
+                  if (monthlyData[currentMonth]) {
+                    nuevoMonthlyData[currentMonth] = monthlyData[currentMonth];
+                  }
+                  
+                  // Contar meses que se eliminarán
+                  for (const mes in monthlyData) {
+                    if (mes !== currentMonth) {
+                      mesesAEliminar.push(mes);
+                    }
+                  }
+                  
+                  if (mesesAEliminar.length === 0) {
+                    alert("ℹ️ No hay meses anteriores para limpiar.");
+                    return;
+                  }
+                  
+                  setMonthlyData(nuevoMonthlyData);
+                  
+                  alert(`✅ Historial limpiado exitosamente.\n\n📊 Meses removidos de la vista: ${mesesAEliminar.length}\n📈 Mes actual mantenido: ${currentMonth}\n💾 Datos preservados en Firebase para exportaciones.\n\n💡 Para ver todos los meses nuevamente, exporta un backup y reimporta los datos.`);
+                  
+                  setCloudStatus('💾 Historial limpiado - Datos en nube');
+                }
+              }}
+              className="w-full bg-yellow-500 text-white py-3 rounded-lg font-semibold hover:bg-yellow-600 transition-colors flex items-center justify-center space-x-2"
             >
-              <Trash2 size={20} />
-              <span>REINICIAR MES ACTUAL ({currentMonth})</span>
+              <span>LIMPIAR MESES ANTERIORES DE LA VISTA</span>
             </button>
-            <p className="text-xs text-red-600 mt-2 text-center">
-              ⚠️ Esta acción NO se puede deshacer para el mes actual
+            <p className="text-xs text-yellow-700 mt-2 text-center">
+              💡Los datos permanecen en Firebase y exportaciones.
             </p>
           </div>
           
@@ -2333,9 +2029,12 @@ const App = () => {
           <div className="text-sm text-gray-500">
             <p>📈 <strong>Estadísticas actuales:</strong></p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Meses completados: {Object.keys(monthlyData).length}</li>
+              <li>Meses registrados: {Object.keys(monthlyData).length}</li>
               <li>Días registrados totales: {Object.keys(historicalData).length}</li>
               <li>Último mes: {currentMonth}</li>
+              <li>Días registrados en el mes actual: {
+                Object.keys(historicalData).filter(date => date.startsWith(currentMonth)).length
+              }</li>
             </ul>
             <p className="mt-3">☁️ {cloudStatus}</p>
           </div>
@@ -2344,7 +2043,7 @@ const App = () => {
     );
   };
 
-  // Renderizar vista histórica
+  // ===================== RENDERIZAR VISTA HISTÓRICA (SOLO PORCENTAJES) =====================
   const renderHistoricalView = () => {
     if (!selectedDate) {
       return (
@@ -2586,6 +2285,7 @@ const App = () => {
           </button>
         </div>
 
+        {/* SOLO MUESTRA PORCENTAJES */}
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border rounded-lg p-4 bg-amber-50 border-amber-200">
@@ -2605,10 +2305,10 @@ const App = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-4 bg-blue-50">
-              <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
-              {isEditing ? (
+          {isEditing ? (
+            <div className="space-y-6">
+              <div className="border rounded-lg p-4 bg-blue-50">
+                <h3 className="font-bold text-lg mb-3 text-blue-900">Paso 1</h3>
                 <div className="space-y-3">
                   <div>
                     <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
@@ -2628,36 +2328,11 @@ const App = () => {
                       className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
                     />
                   </div>
-                  <div className="pt-2 border-t border-blue-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Acum. anterior:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.acumuladoAnterior || 0)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="pt-2 border-t border-blue-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
 
-            <div className="border rounded-lg p-4 bg-green-50">
-              <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
-              {isEditing ? (
+              <div className="border rounded-lg p-4 bg-green-50">
+                <h3 className="font-bold text-lg mb-3 text-green-900">Paso 2</h3>
                 <div className="space-y-3">
                   <div>
                     <label className="block text-gray-700 font-semibold mb-1 text-sm">Dato 1</label>
@@ -2677,92 +2352,60 @@ const App = () => {
                       className="w-full p-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
                     />
                   </div>
-                  <div className="pt-2 border-t border-green-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Acum. anterior:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2?.acumuladoAnterior || 0)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="pt-2 border-t border-green-200">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-600">Total del día:</p>
-                        <p className="font-bold text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <h3 className="font-bold text-lg mb-3 text-gray-900">Resumen Comparativo</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-600">Paso 1 - Total del día:</p>
-                <p className="font-bold text-lg text-blue-900">{formatCurrency(data.paso1?.total || 0)}</p>
-                <p className="text-sm text-gray-600 mt-2">Paso 1 - Acum. del mes:</p>
-                <p className="font-bold text-xl text-blue-900">{formatCurrency(data.paso1?.acumulado || 0)}</p>
               </div>
-              <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-sm text-gray-600">Paso 2 - Total del día:</p>
-                <p className="font-bold text-lg text-green-900">{formatCurrency(data.paso2?.total || 0)}</p>
-                <p className="text-sm text-gray-600 mt-2">Paso 2 - Acum. del mes:</p>
-                <p className="font-bold text-xl text-green-900">{formatCurrency(data.paso2?.acumulado || 0)}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          {isEditing ? (
-            <div className="flex space-x-3">
-              <button
-                onClick={saveEdit}
-                className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Check size={20} />
-                <span>Guardar Cambios</span>
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <X size={20} />
-                <span>Cancelar</span>
-              </button>
             </div>
           ) : (
-            <div className="space-y-3">
-              <button
-                onClick={() => startEditing(selectedDate)}
-                className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Edit2 size={20} />
-                <span>Editar Datos</span>
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate(null);
-                  setEditData(null);
-                  setShowCalendar(true);
-                }}
-                className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
-              >
-                Volver al Calendario
-              </button>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-gray-700 font-semibold text-center">
+                📊 Datos del día {selectedDate} 
+              </p>
+              <p className="text-sm text-gray-600 text-center mt-1">
+                Para editar los datos, haz clic en el botón "Editar Datos" a continuación.
+              </p>
             </div>
           )}
+
+          <div className="mt-6 space-y-3">
+            {isEditing ? (
+              <div className="flex space-x-3">
+                <button
+                  onClick={saveEdit}
+                  className="flex-1 bg-green-500 text-white py-3 rounded-lg font-semibold hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Check size={20} />
+                  <span>Guardar Cambios</span>
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <X size={20} />
+                  <span>Cancelar</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <button
+                  onClick={() => startEditing(selectedDate)}
+                  className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Edit2 size={20} />
+                  <span>Editar Datos</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedDate(null);
+                    setEditData(null);
+                    setShowCalendar(true);
+                  }}
+                  className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                >
+                  Volver al Calendario
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -3268,7 +2911,8 @@ const App = () => {
         </div>
 
         <div className="mt-4 text-center text-sm text-gray-500">
-          <p>💡 Cada nuevo mes los acumulados comienzan desde CERO. Los meses anteriores permanecen en Firebase para historial.</p>
+          <p>💡 <strong>Configuración actual:</strong> La interfaz solo muestra datos del mes actual ({currentMonth}).</p>
+          <p>📊 Meses anteriores disponibles en el historial y exportaciones.</p>
           <p className="mt-1">☁️ {cloudStatus}</p>
         </div>
       </div>
