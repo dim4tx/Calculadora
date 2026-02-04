@@ -2308,39 +2308,18 @@ if (esMesAnterior) {
               {/* PORCENTAJE DEL DÍA */}
               <div className="border rounded-lg p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
                 <div className="text-center">
-                  <p className="text-gray-600 mb-2">Porcentaje del día</p>
                   <p className="font-bold text-5xl text-amber-700">
                     {porcentajeDia}%
                   </p>
-                  <p className="text-sm text-gray-500 mt-2">
-                    Relación entre Paso 1 y Paso 2 del día
-                  </p>
-                  <div className="mt-3 pt-3 border-t border-amber-200">
-                    <p className="text-xs text-amber-600">
-                      Día: {selectedDate}
-                    </p>
-                  </div>
                 </div>
               </div>
 
               {/* PORCENTAJE ACUMULADO DEL MES */}
               <div className="border rounded-lg p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
                 <div className="text-center">
-                  <p className="text-gray-600 mb-2">Porcentaje acumulado del mes</p>
                   <p className="font-bold text-5xl text-purple-700">
                     {porcentajeAcumuladoMes.toFixed(2)}%
                   </p>
-                  <p className="text-sm text-gray-500 mt-2">
-                    Relación acumulada hasta este día
-                  </p>
-                  <div className="mt-3 pt-3 border-t border-purple-200">
-                    <p className="text-xs text-purple-600">
-                      Mes: {mesDeLaFecha}
-                    </p>
-                    <p className="text-xs text-purple-500 mt-1">
-                      Hasta el día: {selectedDate}
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
