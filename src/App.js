@@ -2241,105 +2241,126 @@ const App = () => {
     }
 
     // ========== SI ES MES ANTERIOR (SOLO PORCENTAJE) ==========
-    if (esMesAnterior) {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">
-                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </h2>
-                <button
-                  onClick={() => {
-                    setSelectedDate(null);
-                    setIsEditing(false);
-                    setEditData(null);
-                  }}
-                  className="text-gray-500 hover:text-gray-700 text-2xl"
-                >
-                  ✕
-                </button>
-              </div>
+if (esMesAnterior) {
+  // Calcular porcentaje acumulado del mes
+  const calcularPorcentajeAcumuladoMes = () => {
+    const monthKey = mesDeLaFecha;
+    const monthDays = Object.entries(historicalData)
+      .filter(([date]) => date.startsWith(monthKey) && date <= selectedDate)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    
+    if (monthDays.length === 0) return 0;
+    
+    const lastDay = monthDays[monthDays.length - 1][1];
+    const acum1 = lastDay.paso1?.acumulado || 0;
+    const acum2 = lastDay.paso2?.acumulado || 0;
+    
+    let porcentaje = 0;
+    if (acum1 > 0 && acum2 > 0) {
+      const menor = Math.min(acum1, acum2);
+      const mayor = Math.max(acum1, acum2);
+      porcentaje = (menor / mayor) * 100;
+    }
+    
+    return porcentaje;
+  };
+  
+  const porcentajeAcumuladoMes = calcularPorcentajeAcumuladoMes();
+  const porcentajeDia = data?.porcentaje?.toFixed(2) || 0;
 
-              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6 rounded-lg">
-                <p className="text-yellow-800 font-semibold">
-                  📊 Mes anterior optimizado
-                </p>
-                <p className="text-sm text-yellow-700 mt-1">
-                  Este día pertenece a un mes anterior. Solo se muestra el porcentaje para optimizar espacio.
-                </p>
-                <p className="text-sm text-yellow-600 mt-2">
-                  💡 Los datos completos están disponibles en exportaciones Excel/JSON.
-                </p>
-              </div>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800">
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-CO', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </h2>
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setIsEditing(false);
+                setEditData(null);
+              }}
+              className="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
 
-              <div className="space-y-6">
-                {/* PORCENTAJE DEL DÍA */}
-                <div className="border rounded-lg p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
-                  <div className="text-center">
-                    <p className="text-gray-600 mb-2">Porcentaje del día</p>
-                    <p className="font-bold text-5xl text-amber-700">
-                      {data?.porcentaje?.toFixed(2) || 0}%
-                    </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Relación entre Paso 1 y Paso 2
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6 rounded-lg">
+            <p className="text-yellow-800 font-semibold">
+              📊 Mes anterior optimizado
+            </p>
+            <p className="text-sm text-yellow-700 mt-1">
+              Este día pertenece a un mes anterior.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            {/* GRID DE PORCENTAJES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* PORCENTAJE DEL DÍA */}
+              <div className="border rounded-lg p-6 bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
+                <div className="text-center">
+                  <p className="text-gray-600 mb-2">Porcentaje del día</p>
+                  <p className="font-bold text-5xl text-amber-700">
+                    {porcentajeDia}%
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Relación entre Paso 1 y Paso 2 del día
+                  </p>
+                  <div className="mt-3 pt-3 border-t border-amber-200">
+                    <p className="text-xs text-amber-600">
+                      Día: {selectedDate}
                     </p>
                   </div>
                 </div>
+              </div>
 
-                {/* INFORMACIÓN ADICIONAL */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="border rounded-lg p-4 bg-blue-50">
-                    <p className="text-sm text-gray-600">Mes</p>
-                    <p className="font-bold text-blue-900">{mesDeLaFecha}</p>
-                  </div>
-                  <div className="border rounded-lg p-4 bg-green-50">
-                    <p className="text-sm text-gray-600">Estado</p>
-                    <p className="font-bold text-green-900">Optimizado</p>
-                  </div>
-                </div>
-
-                {/* BOTÓN VOLVER */}
-                <button
-                  onClick={() => {
-                    setSelectedDate(null);
-                    setEditData(null);
-                    setShowCalendar(true);
-                  }}
-                  className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
-                >
-                  Volver al Calendario
-                </button>
-
-                <div className="text-center text-sm text-gray-500 mt-4">
-                  <p>📁 Los datos completos están disponibles en:</p>
-                  <div className="flex justify-center space-x-4 mt-2">
-                    <button
-                      onClick={() => exportToExcel('full')}
-                      className="text-blue-600 hover:text-blue-800 font-semibold"
-                    >
-                      Exportar Excel
-                    </button>
-                    <button
-                      onClick={exportAllDataToJSON}
-                      className="text-purple-600 hover:text-purple-800 font-semibold"
-                    >
-                      Exportar JSON
-                    </button>
+              {/* PORCENTAJE ACUMULADO DEL MES */}
+              <div className="border rounded-lg p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+                <div className="text-center">
+                  <p className="text-gray-600 mb-2">Porcentaje acumulado del mes</p>
+                  <p className="font-bold text-5xl text-purple-700">
+                    {porcentajeAcumuladoMes.toFixed(2)}%
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Relación acumulada hasta este día
+                  </p>
+                  <div className="mt-3 pt-3 border-t border-purple-200">
+                    <p className="text-xs text-purple-600">
+                      Mes: {mesDeLaFecha}
+                    </p>
+                    <p className="text-xs text-purple-500 mt-1">
+                      Hasta el día: {selectedDate}
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
+            {/* BOTÓN VOLVER */}
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setEditData(null);
+                setShowCalendar(true);
+              }}
+              className="w-full bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+            >
+              Volver al Calendario
+            </button>
           </div>
         </div>
-      );
-    }
+      </div>
+    </div>
+  );
+}
 
     // ========== SI ES MES ACTUAL (COMPORTAMIENTO NORMAL) ==========
     const calculateMonthAccumulated = () => {
