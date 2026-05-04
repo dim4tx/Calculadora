@@ -51,6 +51,19 @@ const App = () => {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('⏳ Conectando...');
+  const [isSessionAuthenticated, setIsSessionAuthenticated] = useState(false);
+  const [loginCedula, setLoginCedula] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem('sessionUserId') || '');
+  const [sessionUsersMap, setSessionUsersMap] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('sessionUsersMap') || '{}');
+    } catch (e) {
+      return {};
+    }
+  });
 
   // ===================== ESTADOS PARA LIMPIEZA VISUAL =====================
   const [showCleanModal, setShowCleanModal] = useState(false);
@@ -887,6 +900,11 @@ const exportDailySummaryToExcel = () => {
 
   // Cargar datos iniciales CON FIREBASE
   useEffect(() => {
+    if (!isSessionAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     const loadInitialData = async () => {
       try {
         setLoading(true);
@@ -930,7 +948,7 @@ const exportDailySummaryToExcel = () => {
     };
 
     loadInitialData();
-  }, [currentDate]);
+  }, [currentDate, isSessionAuthenticated]);
 
   // Efecto para cargar día anterior después de verificar el día actual
   useEffect(() => {
@@ -1367,6 +1385,69 @@ const exportDailySummaryToExcel = () => {
 
   const parseCurrency = (value) => value.replace(/[^0-9]/g, '');
 
+  const getUserNameById = (userId) => {
+    if (!userId) return '';
+    const usersMap = sessionUsersMap || {};
+    return usersMap[userId] || userId;
+  };
+
+  // ===================== LOGIN SIMPLE =====================
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setLoginError('');
+
+    const cedula = (loginCedula || '').trim();
+    const password = (loginPassword || '').trim();
+
+    if (!cedula || !password) {
+      setLoginError('Debes ingresar cédula y contraseña.');
+      return;
+    }
+
+    try {
+      setLoginLoading(true);
+      const FIXED_USER_ID = 'bEY1p1kgVjgk88AlCGa7nM6I1de2';
+      const usuariosRef = collection(db, 'users', FIXED_USER_ID, 'usuarios');
+      const usuariosSnapshot = await getDocs(usuariosRef);
+
+      let accesoValido = false;
+      let usuarioSesionId = '';
+      const usersMap = {};
+      usuariosSnapshot.forEach((usuarioDoc) => {
+        const usuarioData = usuarioDoc.data() || {};
+        const usuarioId = String(usuarioDoc.id || '');
+        const cedulaDB = String(usuarioData.cedula ?? '').trim();
+        const passwordDB = String(usuarioData.password ?? '').trim();
+        const nombreDB = String(usuarioData.nombre ?? '').trim();
+        if (usuarioId) {
+          usersMap[usuarioId] = nombreDB || usuarioId;
+        }
+        if (cedulaDB === cedula && passwordDB === password) {
+          accesoValido = true;
+          usuarioSesionId = usuarioId;
+        }
+      });
+
+      if (!accesoValido) {
+        setLoginError('Cédula o contraseña incorrecta.');
+        return;
+      }
+
+      setIsSessionAuthenticated(true);
+      setSessionUserId(usuarioSesionId);
+      setSessionUsersMap(usersMap);
+      localStorage.setItem('sessionUserId', usuarioSesionId);
+      localStorage.setItem('sessionUsersMap', JSON.stringify(usersMap));
+      setLoginCedula('');
+      setLoginPassword('');
+    } catch (err) {
+      console.error('Error validando login:', err);
+      setLoginError('No fue posible validar el inicio de sesión. Intenta nuevamente.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   // Manejar cambios en los inputs
   const handleInputChange = (paso, field, value) => {
     const numValue = parseCurrency(value);
@@ -1543,6 +1624,7 @@ const exportDailySummaryToExcel = () => {
 
       const datosDia = {
         date: saveDate,
+        usuarioRegistroId: sessionUserId || localStorage.getItem('sessionUserId') || '',
         paso1: {
           dato1: todayData.paso1.dato1 || '',
           dato2: todayData.paso1.dato2 || '',
@@ -1655,6 +1737,11 @@ const exportDailySummaryToExcel = () => {
   const saveEdit = async () => {
     try {
       let newHistoricalData = { ...historicalData, [editData.date]: { ...editData } };
+      const editUserId = sessionUserId || localStorage.getItem('sessionUserId') || '';
+      newHistoricalData[editData.date] = {
+        ...(newHistoricalData[editData.date] || {}),
+        usuarioEdicionId: editUserId
+      };
 
       const mesDelDia = editData.date.slice(0, 7);
       const diasOrdenados = Object.entries(newHistoricalData)
@@ -2199,6 +2286,14 @@ const exportDailySummaryToExcel = () => {
                   <p className="font-bold text-5xl text-purple-700">{porcentajeAcumuladoMes.toFixed(2)}%</p>
                 </div>
               </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                <p className="text-sm text-gray-600">
+                  Usuario que registró: <span className="font-semibold text-gray-800">{data?.usuarioRegistroId ? getUserNameById(data?.usuarioRegistroId) : 'No disponible'}</span>
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  Usuario que editó: <span className="font-semibold text-gray-800">{data?.usuarioEdicionId ? getUserNameById(data?.usuarioEdicionId) : 'Sin edición'}</span>
+                </p>
+              </div>
 
               <button
                 onClick={() => { setSelectedDate(null); setEditData(null); setShowCalendar(true); }}
@@ -2265,6 +2360,14 @@ const exportDailySummaryToExcel = () => {
               <p className="text-sm text-gray-600 mb-1">% acumulado del mes</p>
               <p className="font-bold text-3xl text-purple-700">{monthAccumulated.porcentaje.toFixed(2)}%</p>
             </div>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p className="text-sm text-gray-600">
+              Usuario que registró: <span className="font-semibold text-gray-800">{data?.usuarioRegistroId ? getUserNameById(data?.usuarioRegistroId) : 'No disponible'}</span>
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
+              Usuario que editó: <span className="font-semibold text-gray-800">{data?.usuarioEdicionId ? getUserNameById(data?.usuarioEdicionId) : 'Sin edición'}</span>
+            </p>
           </div>
 
           {isEditing ? (
@@ -2333,6 +2436,55 @@ const exportDailySummaryToExcel = () => {
   };
 
   // ===================== LOADING =====================
+  if (!isSessionAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Iniciar sesión</h2>
+          <p className="text-gray-600 mb-6">Ingresa tu cédula y contraseña para continuar.</p>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 font-semibold mb-2">Cédula</label>
+              <input
+                type="text"
+                value={loginCedula}
+                onChange={(e) => setLoginCedula(e.target.value)}
+                className="w-full p-3 border-2 border-blue-300 rounded-lg text-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Ej: 123456789"
+              />
+            </div>
+
+            <div>
+              <label className="block text-gray-700 font-semibold mb-2">Contraseña</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full p-3 border-2 border-blue-300 rounded-lg text-lg focus:border-blue-500 focus:outline-none"
+                placeholder="********"
+              />
+            </div>
+
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                {loginError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className={`w-full py-3 rounded-lg font-semibold transition-colors ${loginLoading ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+            >
+              {loginLoading ? 'Validando...' : 'Ingresar'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center">
