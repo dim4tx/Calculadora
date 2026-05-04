@@ -1536,8 +1536,8 @@ const exportDailySummaryToExcel = () => {
 
     if (data) {
       viewHistoricalData(date);
-    } else if (mesDeLaFecha < currentMonth) {
-      alert(`❌ No puedes registrar datos en meses anteriores.\n\nEl día ${date} pertenece al mes ${mesDeLaFecha}.`);
+    } else if (mesDeLaFecha < currentMonth && !isLastDayOfItsMonth(date)) {
+      alert(`❌ No puedes registrar datos en meses anteriores.\n\nEl día ${date} pertenece al mes ${mesDeLaFecha}.\n\nSolo el último día (28, 29, 30 o 31 según el mes) de cada mes pasado puede registrarse si aún no tiene datos.`);
     } else {
       if (window.confirm(`¿Quieres registrar datos para el día ${date}?`)) {
         setupDateForRegistration(date);
@@ -1548,8 +1548,8 @@ const exportDailySummaryToExcel = () => {
   const setupDateForRegistration = (date) => {
     const selectedMonth = date.slice(0, 7);
 
-    if (selectedMonth < currentMonth) {
-      alert(`❌ No puedes registrar datos en meses anteriores.\n\nLa fecha ${date} pertenece a un mes pasado (${selectedMonth}).`);
+    if (selectedMonth < currentMonth && !isLastDayOfItsMonth(date)) {
+      alert(`❌ No puedes registrar datos en meses anteriores.\n\nLa fecha ${date} pertenece a un mes pasado (${selectedMonth}).\n\nSolo el último día de cada mes pasado puede registrarse si aún no tiene datos.`);
       return;
     }
 
@@ -1931,6 +1931,11 @@ const exportDailySummaryToExcel = () => {
               textColor = 'text-gray-400';
               hoverColor = '';
               titleText = 'Fecha futura';
+            } else if (esMesAnterior && esUltimoDiaMes) {
+              bgColor = 'bg-orange-300';
+              textColor = 'text-white';
+              hoverColor = 'hover:bg-orange-400';
+              titleText = 'Último día del mes - Puedes registrar datos';
             } else if (esMesAnterior) {
               bgColor = 'bg-gray-100';
               textColor = 'text-gray-400';
