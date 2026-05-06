@@ -89,9 +89,43 @@ const App = () => {
     return false;
   };
 
+  // ===================== HELPER: fecha/hora Colombia (ISO -05:00) =====================
+  const getNowColombiaISO = () => {
+    // Colombia no maneja DST, offset fijo -05:00
+    const now = new Date();
+    const dtf = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    // sv-SE => "YYYY-MM-DD HH:mm:ss"
+    const localBogota = dtf.format(now).replace(' ', 'T');
+    return `${localBogota}-05:00`;
+  };
+
+  // ===================== PERMISOS (usuarios limitados) =====================
+  const effectiveSessionUserId = sessionUserId || localStorage.getItem('sessionUserId') || '';
+  const LIMITED_USER_IDS = ['sandra_diaz', 'jhony_sanchez'];
+  const isLimitedUser = LIMITED_USER_IDS.includes(effectiveSessionUserId);
+  const yesterdayISO = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const canLimitedUserWorkOnDate = (dateStr) => dateStr === yesterdayISO;
+
   // ===================== FUNCIONES JSON =====================
   const exportAllDataToJSON = () => {
     try {
+      if (isLimitedUser) {
+        alert('⛔ Tu usuario no tiene permisos para descargar reportes o backups.');
+        return;
+      }
       const exportData = {
         fechaExportacion: new Date().toISOString(),
         aplicacion: 'Calculadora Diaria',
@@ -233,6 +267,10 @@ const App = () => {
 // ===================== EXPORTAR RESUMEN DIARIO (SOLO PORCENTAJES) =====================
 const exportDailySummaryToExcel = () => {
   try {
+    if (isLimitedUser) {
+      alert('⛔ Tu usuario no tiene permisos para descargar reportes.');
+      return;
+    }
     if (!historicalData || Object.keys(historicalData).length === 0) {
       alert("No hay datos diarios para exportar.");
       return;
@@ -373,6 +411,10 @@ const exportDailySummaryToExcel = () => {
 
   // ===================== LIMPIAR DATOS VISUALMENTE =====================
   const abrirModalLimpiar = () => {
+    if (isLimitedUser) {
+      alert('⛔ Tu usuario no tiene permisos para eliminar/limpiar datos.');
+      return;
+    }
     setShowCleanModal(true);
     setSelectedMonthToClean('');
   };
@@ -419,6 +461,10 @@ const exportDailySummaryToExcel = () => {
   // ===================== FUNCIÓN PARA EXPORTAR A EXCEL =====================
   const exportToExcel = (type = 'full') => {
     try {
+      if (isLimitedUser) {
+        alert('⛔ Tu usuario no tiene permisos para descargar reportes.');
+        return;
+      }
       if (type === 'monthly' && (!monthlyData || Object.keys(monthlyData).length === 0)) {
         alert("No hay datos mensuales para exportar.");
         return;
@@ -513,7 +559,8 @@ const exportDailySummaryToExcel = () => {
           dailySheet.getColumn(col).width = [15,20,15,15,15,20,15,15,15,20,15,20][i];
         });
 
-        const dailyTitleRow = dailySheet.addRow(['DETALLE DIARIO - MES ACTUAL']);
+        const isFullExport = type === 'full';
+        const dailyTitleRow = dailySheet.addRow([isFullExport ? 'DETALLE DIARIO - TODOS LOS MESES' : 'DETALLE DIARIO - MES ACTUAL']);
         dailyTitleRow.font = { bold: true, size: 14, color: { argb: '1F4E78' } };
         dailyTitleRow.alignment = { horizontal: 'center' };
         dailySheet.mergeCells('A1:L1');
@@ -534,13 +581,17 @@ const exportDailySummaryToExcel = () => {
           cell.alignment = { horizontal: 'center' };
         });
 
-        // 🔥 SOLO días del MES ACTUAL
+        // Días a exportar
         const sortedDates = Object.keys(historicalData)
-          .filter(date => date.startsWith(currentMonth))
+          .filter(date => {
+            if (!isFullExport) return date.startsWith(currentMonth);
+            const monthKey = date.slice(0, 7);
+            return monthlyData?.[monthKey]?.estado !== 1;
+          })
           .sort();
 
         if (sortedDates.length === 0) {
-          dailySheet.addRow(['No hay datos registrados en el mes actual', '', '', '', '', '', '', '', '', '', '', '']);
+          dailySheet.addRow([isFullExport ? 'No hay datos registrados (todos los meses)' : 'No hay datos registrados en el mes actual', '', '', '', '', '', '', '', '', '', '', '']);
         } else {
           sortedDates.forEach((date, index) => {
             const data = historicalData[date];
@@ -662,6 +713,10 @@ const exportDailySummaryToExcel = () => {
   // ===================== EXPORTAR MES ESPECÍFICO A EXCEL =====================
   const exportMonthToExcel = (monthKey) => {
     try {
+      if (isLimitedUser) {
+        alert('⛔ Tu usuario no tiene permisos para descargar reportes.');
+        return;
+      }
       const monthData = monthlyData[monthKey];
 
       if (!monthData) {
@@ -1586,11 +1641,17 @@ const exportDailySummaryToExcel = () => {
     try {
       const saveDate = selectedDate || currentDate;
       const mesDelDia = saveDate.slice(0, 7);
+      const nowISO = getNowColombiaISO();
 
       console.log('💾 Guardando datos para el día:', saveDate);
 
       if (new Date(saveDate) > new Date()) {
         alert('❌ No puedes registrar datos para días futuros.');
+        return;
+      }
+
+      if (isLimitedUser && !canLimitedUserWorkOnDate(saveDate)) {
+        alert(`⛔ Tu usuario solo puede registrar/editar datos del día anterior.\n\nFecha permitida: ${yesterdayISO}`);
         return;
       }
 
@@ -1625,6 +1686,7 @@ const exportDailySummaryToExcel = () => {
       const datosDia = {
         date: saveDate,
         usuarioRegistroId: sessionUserId || localStorage.getItem('sessionUserId') || '',
+        fechaRegistro: nowISO,
         paso1: {
           dato1: todayData.paso1.dato1 || '',
           dato2: todayData.paso1.dato2 || '',
@@ -1726,6 +1788,10 @@ const exportDailySummaryToExcel = () => {
   // ===================== EDICIÓN =====================
   const startEditing = (date) => {
     const dataToEdit = historicalData[date];
+    if (isLimitedUser && !canLimitedUserWorkOnDate(date)) {
+      alert(`⛔ Tu usuario solo puede editar datos del día anterior.\n\nFecha permitida: ${yesterdayISO}`);
+      return;
+    }
     if (!canEditDate(date)) {
       alert(`❌ No puedes editar datos de este día.\n\nSolo se puede editar el mes actual o el último día de meses anteriores.\n\nEl día ${date} no cumple ninguna condición.`);
       return;
@@ -1736,11 +1802,17 @@ const exportDailySummaryToExcel = () => {
 
   const saveEdit = async () => {
     try {
+      if (isLimitedUser && !canLimitedUserWorkOnDate(editData?.date)) {
+        alert(`⛔ Tu usuario solo puede guardar cambios del día anterior.\n\nFecha permitida: ${yesterdayISO}`);
+        return;
+      }
       let newHistoricalData = { ...historicalData, [editData.date]: { ...editData } };
       const editUserId = sessionUserId || localStorage.getItem('sessionUserId') || '';
+      const nowISO = getNowColombiaISO();
       newHistoricalData[editData.date] = {
         ...(newHistoricalData[editData.date] || {}),
-        usuarioEdicionId: editUserId
+        usuarioEdicionId: editUserId,
+        fechaEdicion: nowISO
       };
 
       const mesDelDia = editData.date.slice(0, 7);
@@ -2169,6 +2241,29 @@ const exportDailySummaryToExcel = () => {
     const esNuevoDia = !data && !editData;
 
     if (esNuevoDia) {
+      if (isLimitedUser && !canLimitedUserWorkOnDate(selectedDate)) {
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+            <div className="max-w-2xl mx-auto">
+              <div className="bg-white rounded-lg shadow-lg p-6">
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">Acceso restringido</h2>
+                <p className="text-gray-700">
+                  Tu usuario solo puede registrar o editar datos del día anterior.
+                </p>
+                <p className="text-sm text-gray-600 mt-2">
+                  Fecha permitida: <span className="font-semibold">{yesterdayISO}</span>
+                </p>
+                <button
+                  onClick={() => { setSelectedDate(null); setIsEditing(false); setEditData(null); }}
+                  className="w-full mt-6 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                >
+                  Volver
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
           <div className="max-w-2xl mx-auto">
@@ -2336,7 +2431,7 @@ const exportDailySummaryToExcel = () => {
 
     const monthAccumulated = calcularPorcentajesMes();
     const dayPercentage = calcularPorcentajeDiaHistorico();
-    const puedeEditar = canEditDate(selectedDate);
+    const puedeEditar = canEditDate(selectedDate) && (!isLimitedUser || canLimitedUserWorkOnDate(selectedDate));
 
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
