@@ -194,6 +194,21 @@ const App = () => {
         setHistoricalData(datosImportados);
         setMonthlyData(resumenesImportados);
 
+        // Re-consolidar meses a partir de los datos importados para evitar monthlyData "congelado"
+        try {
+          const mesesDeHistorico = Object.keys(datosImportados || {}).map(f => String(f).slice(0, 7));
+          const mesesDeResumen = Object.keys(resumenesImportados || {});
+          const mesesAReconsolidar = Array.from(new Set([...mesesDeHistorico, ...mesesDeResumen]))
+            .filter(m => m && /^\d{4}-\d{2}$/.test(m))
+            .sort();
+
+          for (const mk of mesesAReconsolidar) {
+            await consolidarMesRobusto(mk, datosImportados, resumenesImportados);
+          }
+        } catch (reconsolidarError) {
+          console.warn('⚠️ No fue posible re-consolidar meses después de importar:', reconsolidarError);
+        }
+
         if (datosImportados[currentDate]) {
           const datosHoy = datosImportados[currentDate];
           setTodayData(datosHoy);
@@ -1093,7 +1108,7 @@ const exportDailySummaryToExcel = () => {
   // ===================== GUARDAR RESUMEN DEL MES =====================
   const saveMonthSummary = async (monthKey, historicalSnapshot = null) => {
     console.log(`📊 saveMonthSummary llamado para: ${monthKey}`);
-    return await consolidarMesRobusto(monthKey);
+    return await consolidarMesRobusto(monthKey, historicalSnapshot, null);
   };
 
   // ✅ NUEVO: Botón manual para consolidar el mes actual o un mes pasado
@@ -1113,10 +1128,13 @@ const exportDailySummaryToExcel = () => {
   };
 
   // ✅ FUNCIÓN ROBUSTA: Consolidar y guardar mes sin depender del estado
-  const consolidarMesRobusto = async (monthKey) => {
+  const consolidarMesRobusto = async (monthKey, historicalSnapshot = null, monthlySnapshot = null) => {
     console.log(`🔨 Consolidando mes ${monthKey} de forma robusta...`);
     try {
-      const diasDelMes = Object.entries(historicalData)
+      const historico = historicalSnapshot || historicalData;
+      const mensual = monthlySnapshot || monthlyData;
+
+      const diasDelMes = Object.entries(historico)
         .filter(([date]) => date.startsWith(monthKey))
         .sort((a, b) => a[0].localeCompare(b[0]));
 
@@ -1179,7 +1197,7 @@ const exportDailySummaryToExcel = () => {
           primerDia: diasDelMes[0][0],
           ultimoDia: diasDelMes[diasDelMes.length - 1][0]
         },
-        estado: 0  // Por defecto visible al consolidar
+        estado: mensual?.[monthKey]?.estado ?? 0
       };
 
       console.log(`✅ Resumen construido para ${monthKey}:`, summary);
@@ -1762,8 +1780,9 @@ const exportDailySummaryToExcel = () => {
         setCloudStatus('💾 Datos sincronizados en la nube');
       }
 
-      if (isLastDayOfItsMonth(saveDate)) {
-        console.log(`✅ Consolidando mes ${mesDelDia} porque se guardó su último día`);
+      const debeReconsolidarMes = isLastDayOfItsMonth(saveDate) || (mesDelDia < currentMonth) || !!monthlyData?.[mesDelDia];
+      if (debeReconsolidarMes) {
+        console.log(`✅ Re-consolidando mes ${mesDelDia} por cambios en sus días`);
         const consolidacionExitosa = await saveMonthSummary(mesDelDia, nuevosHistoricalData);
         if (consolidacionExitosa) {
           console.log(`✅ Mes ${mesDelDia} consolidado correctamente`);
@@ -1865,8 +1884,9 @@ const exportDailySummaryToExcel = () => {
         setCloudStatus('💾 Cambios guardados en la nube');
       }
 
-      if (isLastDayOfItsMonth(editData.date)) {
-        console.log(`✅ Consolidando mes ${mesDelDia} porque se editó su último día`);
+      const debeReconsolidarMes = isLastDayOfItsMonth(editData.date) || (mesDelDia < currentMonth) || !!monthlyData?.[mesDelDia];
+      if (debeReconsolidarMes) {
+        console.log(`✅ Re-consolidando mes ${mesDelDia} por cambios en sus días`);
         const consolidacionExitosa = await saveMonthSummary(mesDelDia, newHistoricalData);
         if (consolidacionExitosa) {
           console.log(`✅ Mes ${mesDelDia} re-consolidado después de edición`);
