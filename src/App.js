@@ -457,15 +457,21 @@ const exportDailySummaryToExcel = () => {
     const confirmMsg = `⚠️ ¿Seguro que deseas limpiar ${mesesALimpiar.length} mes(es)?\n\n${mesesALimpiar.join(', ')}\n\nLos datos se borrarán de la interfaz.`;
     
     if (window.confirm(confirmMsg)) {
+      const usuarioLimpiezaId = effectiveSessionUserId;
+      const fechaLimpieza = getNowColombiaISO();
       for (const mes of mesesALimpiar) {
         if (user) {
           const monthlyRef = doc(db, 'users', user.uid, 'monthlyData', mes);
-          await setDoc(monthlyRef, { estado: 1 }, { merge: true });
+          await setDoc(
+            monthlyRef,
+            { estado: 1, usuarioLimpiezaId, fechaLimpieza },
+            { merge: true }
+          );
         }
         
         setMonthlyData(prev => ({
           ...prev,
-          [mes]: { ...prev[mes], estado: 1 }
+          [mes]: { ...(prev[mes] || {}), estado: 1, usuarioLimpiezaId, fechaLimpieza }
         }));
       }
       
