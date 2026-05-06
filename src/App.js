@@ -85,6 +85,8 @@ const App = () => {
   const canEditDate = (dateStr) => {
     const mesDelaFecha = dateStr.slice(0, 7);
     if (mesDelaFecha === currentMonth) return true;
+    // Mes anterior (o cualquier mes pasado): permitir editar si el día ya existe
+    if (mesDelaFecha < currentMonth && historicalData?.[dateStr]) return true;
     if (mesDelaFecha < currentMonth && isLastDayOfItsMonth(dateStr)) return true;
     return false;
   };
@@ -1668,8 +1670,8 @@ const exportDailySummaryToExcel = () => {
         return;
       }
 
-      if (isLimitedUser && !canLimitedUserWorkOnDate(saveDate)) {
-        alert(`⛔ Tu usuario solo puede registrar/editar datos del día anterior.\n\nFecha permitida: ${yesterdayISO}`);
+      if (isLimitedUser && saveDate !== currentDate) {
+        alert(`⛔ Tu usuario solo puede registrar datos del día actual (${currentDate}).`);
         return;
       }
 
@@ -2256,7 +2258,10 @@ const exportDailySummaryToExcel = () => {
 
     const data = historicalData[selectedDate];
     const mesDeLaFecha = selectedDate.slice(0, 7);
-    const esMesAnteriorSoloLectura = mesDeLaFecha < currentMonth && !isLastDayOfItsMonth(selectedDate);
+    const existeDato = !!data;
+    // Mes anterior: si el día existe, se permite editar; si NO existe, sigue solo lectura
+    // excepto el último día del mes (que se mantiene editable/ingresable como antes).
+    const esMesAnteriorSoloLectura = mesDeLaFecha < currentMonth && !isLastDayOfItsMonth(selectedDate) && !existeDato;
     const esMesAnteriorEditable = mesDeLaFecha < currentMonth && isLastDayOfItsMonth(selectedDate);
     const esNuevoDia = !data && !editData;
 
