@@ -1676,8 +1676,8 @@ const exportDailySummaryToExcel = () => {
         return;
       }
 
-      if (isLimitedUser && saveDate !== currentDate) {
-        alert(`⛔ Tu usuario solo puede registrar datos del día actual (${currentDate}).`);
+      if (isLimitedUser && saveDate !== currentDate && saveDate !== yesterdayISO) {
+        alert(`⛔ Tu usuario solo puede registrar datos del día actual (${currentDate}) o del día anterior (${yesterdayISO}).`);
         return;
       }
 
